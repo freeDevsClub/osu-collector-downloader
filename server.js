@@ -40,6 +40,7 @@ const AUTO_RESUME_MAX_ATTEMPTS = 8;
 const mirrorCooldowns = new Map();
 
 const LOG_DEBUG = /^(1|true|yes)$/i.test(process.env.DEBUG || '');
+const ENABLE_OAUTH = /^(1|true|yes)$/i.test(process.env.ENABLE_OAUTH || '');
 
 function log(level, event, details = {}) {
   if (level === 'debug' && !LOG_DEBUG) return;
@@ -1442,6 +1443,10 @@ async function responsePreview(response, limit = 300) {
 }
 
 async function handleOauthCallback(req, res, url) {
+  if (!ENABLE_OAUTH) {
+    res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ error: 'OAuth-авторизация отключена (запустите сервер с ENABLE_OAUTH=1).' }));
+  }
   const finish = (query, status = 302) => {
     res.writeHead(status, { Location: `/?${query}`, 'Cache-Control': 'no-store' });
     res.end();
@@ -1478,9 +1483,21 @@ async function handleApi(req, res, url) {
   }
   if (req.method === 'GET' && url.pathname === '/api/oauth/status') {
     const status = oauthStatus();
-    return json(res, 200, { configured: status.configured, connected: status.connected, kind: status.kind, scope: status.scope, expiresAt: status.expiresAt, clientId: status.clientId, callbackUrl: status.callbackUrl });
+    return json(res, 200, {
+      enabled: ENABLE_OAUTH,
+      configured: ENABLE_OAUTH ? status.configured : false,
+      connected: ENABLE_OAUTH ? status.connected : false,
+      kind: ENABLE_OAUTH ? status.kind : null,
+      scope: ENABLE_OAUTH ? status.scope : null,
+      expiresAt: ENABLE_OAUTH ? status.expiresAt : null,
+      clientId: ENABLE_OAUTH ? status.clientId : null,
+      callbackUrl: status.callbackUrl,
+    });
   }
   if (req.method === 'POST' && url.pathname === '/api/oauth/config') {
+    if (!ENABLE_OAUTH) {
+      return json(res, 403, { error: 'OAuth-авторизация отключена на сервере (запустите с ENABLE_OAUTH=1).' });
+    }
     const body = await readJson(req);
     const requestedClientId = typeof body.clientId === 'string' || Number.isSafeInteger(body.clientId) ? String(body.clientId || '').trim() : '';
     const clientId = requestedClientId || oauthConfig.clientId;
@@ -1504,6 +1521,9 @@ async function handleApi(req, res, url) {
     return json(res, 200, oauthStatus());
   }
   if (req.method === 'POST' && url.pathname === '/api/oauth/start') {
+    if (!ENABLE_OAUTH) {
+      return json(res, 403, { error: 'OAuth-авторизация отключена на сервере (запустите с ENABLE_OAUTH=1).' });
+    }
     if (!oauthConfigured()) return json(res, 400, { error: 'Сначала сохраните Client ID и Client Secret.' });
     const state = crypto.randomBytes(24).toString('hex');
     oauthStates.set(state, Date.now() + OAUTH_STATE_TTL_MS);
@@ -1511,6 +1531,9 @@ async function handleApi(req, res, url) {
     return json(res, 200, { authorizeUrl: buildAuthorizeUrl(state) });
   }
   if (req.method === 'DELETE' && url.pathname === '/api/oauth/disconnect') {
+    if (!ENABLE_OAUTH) {
+      return json(res, 403, { error: 'OAuth-авторизация отключена на сервере.' });
+    }
     oauthToken.accessToken = null;
     oauthToken.refreshToken = null;
     oauthToken.expiresAt = 0;
@@ -1563,6 +1586,9 @@ async function handleApi(req, res, url) {
     if (method === 'mirror') {
       auth = { kind: 'mirror' };
     } else if (method === 'oauth') {
+      if (!ENABLE_OAUTH) {
+        return json(res, 403, { error: 'OAuth-метод отключён на сервере (запустите с ENABLE_OAUTH=1).' });
+      }
       try {
         const token = await ensureOsuToken();
         auth = { kind: 'oauth', token };
@@ -1665,6 +1691,9 @@ async function handleApi(req, res, url) {
       }
       auth = { kind: 'mirror' };
     } else if (job.method === 'oauth') {
+      if (!ENABLE_OAUTH) {
+        return json(res, 403, { error: 'OAuth-метод отключён на сервере (запустите с ENABLE_OAUTH=1).' });
+      }
       try {
         auth = { kind: 'oauth', token: await ensureOsuToken() };
       } catch (error) {
@@ -1796,10 +1825,11 @@ server.listen(PORT, HOST, () => {
     node: process.version,
     downloadsDirectory: DOWNLOADS_DIR,
     oauthCallback: CALLBACK_URL,
+    oauthEnabled: ENABLE_OAUTH,
     oauthConfigured: oauthConfigured(),
     downloadMirrors: MIRRORS.map(mirror => mirror.id),
   });
-  log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}. OAuth-логика сохранена в коде, но метод скрыт в интерфейсе.` });
+  log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.${ENABLE_OAUTH ? ' OAuth включён.' : ' OAuth отключён флагом (ENABLE_OAUTH=1 для включения).'}` });
 });
 
 void bootstrapAfterListen();

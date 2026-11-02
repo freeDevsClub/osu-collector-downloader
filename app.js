@@ -59,7 +59,11 @@ async function api(url, options = {}) {
     signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Ошибка запроса (${response.status})`);
+  if (!response.ok) {
+    const err = new Error(data.error || `Ошибка запроса (${response.status})`);
+    err.status = response.status;
+    throw err;
+  }
   return data;
 }
 
@@ -70,7 +74,7 @@ function selectedMethod() {
 
 function methodReady(method) {
   if (method === 'mirror') return true;
-  return method === 'oauth' ? oauthState.connected : sessionConnected;
+  return method === 'oauth' ? (oauthState.enabled && oauthState.connected) : sessionConnected;
 }
 
 function updateDownloadButton() {
@@ -90,6 +94,7 @@ methodInputs.forEach(input => {
 
 function renderOauthStatus(status) {
   oauthState = {
+    enabled: status?.enabled ?? true,
     configured: Boolean(status.configured),
     connected: Boolean(status.connected),
     callbackUrl: status.callbackUrl || '',
@@ -97,12 +102,15 @@ function renderOauthStatus(status) {
   const dot = byId('oauth-dot');
   const text = byId('oauth-text');
   dot.classList.toggle('connected', oauthState.connected);
-  if (oauthState.connected) text.textContent = `Токен получен${status.kind === 'authorization_code' ? ' для вашего аккаунта' : ' (клиентские учётные данные)'}`;
+  if (!oauthState.enabled) text.textContent = 'OAuth отключён на сервере (запустите с ENABLE_OAUTH=1)';
+  else if (oauthState.connected) text.textContent = `Токен получен${status.kind === 'authorization_code' ? ' для вашего аккаунта' : ' (клиентские учётные данные)'}`;
   else if (oauthState.configured) text.textContent = 'Приложение сохранено — войдите через osu!';
   else text.textContent = 'OAuth-приложение не настроено';
-  byId('oauth-disconnect').hidden = !oauthState.connected;
-  byId('oauth-authorize').disabled = !oauthState.configured || oauthState.connected;
+  byId('oauth-disconnect').hidden = !oauthState.enabled || !oauthState.connected;
+  byId('oauth-authorize').disabled = !oauthState.enabled || !oauthState.configured || oauthState.connected;
   byId('oauth-authorize').textContent = oauthState.connected ? 'Подключено' : 'Войти через osu!';
+  const saveBtn = byId('oauth-save');
+  if (saveBtn) saveBtn.disabled = !oauthState.enabled;
   const clientIdInput = byId('oauth-client-id');
   const secretInput = byId('oauth-client-secret');
   if (oauthState.configured) {
@@ -121,7 +129,7 @@ function renderOauthStatus(status) {
 function renderSessionState(connected) {
   sessionConnected = connected;
   byId('session-dot').classList.toggle('connected', connected);
-  byId('session-text').textContent = connected ? 'Сессия сохранена до перезапуска' : 'Сессия не добавлена';
+  byId('session-text').textContent = connected ? 'Сессия сохранена (до 6 ч или до перезапуска)' : 'Сессия не добавлена';
   byId('session-clear').hidden = !connected;
   sessionInput.required = !connected;
   sessionInput.placeholder = connected ? 'Сессия сохранена в памяти приложения' : 'Вставьте значение cookie osu_session';
@@ -140,17 +148,17 @@ function renderMapList(maps = []) {
     if (renderId !== mapListRenderId) return;
     const fragment = document.createDocumentFragment();
     for (const map of maps.slice(index, index + CHUNK_SIZE)) {
-      const item = document.createElement('span');
-      item.className = 'map-id';
+      const item = document.createElement('li');
+      item.className = 'map-id map-item';
       const title = document.createElement('span');
       title.className = 'map-title';
       title.textContent = map?.label || `Набор ${map?.id ?? ''}`;
       item.append(title);
       if (map?.creator) {
-        const artist = document.createElement('span');
-        artist.className = 'map-artist';
-        artist.textContent = `mapper: ${map.creator}`;
-        item.append(artist);
+        const creator = document.createElement('span');
+        creator.className = 'map-creator';
+        creator.textContent = `маппер: ${map.creator}`;
+        item.append(creator);
       }
       fragment.append(item);
     }
@@ -623,9 +631,9 @@ setInterval(() => {
   if (hasActiveCooldowns()) renderMirrors();
 }, 1000);
 
-// Фоновый опрос зеркал запускается только при открытой вкладке и если есть активная задача или активные кулдауны.
+// Фоновый опрос зеркал запускается только при открытой вкладке, когда нет активной задачи (во время которой зеркала приходят с каждым тиком задачи), но есть остывающие зеркала.
 setInterval(() => {
-  if (document.visibilityState === 'visible' && (activeJob || hasActiveCooldowns())) {
+  if (document.visibilityState === 'visible' && !activeJob && hasActiveCooldowns()) {
     void loadMirrors();
   }
 }, 4000);

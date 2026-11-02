@@ -94,6 +94,11 @@
         gap: 18px;
         align-items: start;
       }
+      .cards-col {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
       .card {
         border: 1px solid var(--line);
         border-radius: 18px;
@@ -103,6 +108,9 @@
       }
       .card + .card {
         margin-top: 18px;
+      }
+      .cards-col > .card + .card {
+        margin-top: 0;
       }
       [hidden] {
         display: none !important;
@@ -276,16 +284,16 @@
         background: #15151b;
       }
       .map-list {
+        list-style: none;
         border-top: 1px solid var(--line);
-        margin-top: 17px;
-        padding-top: 12px;
+        margin: 17px 0 0;
+        padding: 12px 6px 0 0;
         display: flex;
         flex-direction: column;
         gap: 7px;
         max-height: 340px;
         overflow-y: auto;
         overflow-x: hidden;
-        padding-right: 6px;
         scrollbar-width: thin;
         scrollbar-color: #4a4855 transparent;
       }
@@ -319,7 +327,8 @@
         font-weight: 650;
         overflow-wrap: anywhere;
       }
-      .map-artist {
+      .map-artist,
+      .map-creator {
         color: var(--muted);
         overflow-wrap: anywhere;
       }
@@ -663,7 +672,7 @@
       </header>
 
       <div class="grid">
-        <div>
+        <div class="cards-col">
           <section class="card">
             <h2>1. Ссылка на коллекцию</h2>
             <p class="hint">Публичная коллекция с osucollector.com</p>
@@ -700,18 +709,17 @@
                 <span id="collection-count" class="chip"></span>
               </div>
               <div id="collection-meta" class="collection-meta"></div>
-              <div
+              <ul
                 id="map-list"
                 class="map-list"
                 aria-label="Список наборов карт"
-              ></div>
+              ></ul>
             </div>
           </section>
 
-          <!-- Метод OAuth временно скрыт в интерфейсе: серверная и клиентская логика сохранены целиком. (update: card добавлен для сохранения логики создания margin-top)-->
-          <div hidden class="card">
-            <section class="card">
-              <h2>2a. Доступ к osu! через OAuth</h2>
+          <!-- Метод OAuth по умолчанию отключён и скрыт: серверная и клиентская логика сохранены. Для включения см. README.md -->
+          <section id="oauth-card" class="card" hidden>
+            <h2>OAuth-авторизация (экспериментально)</h2>
               <p class="hint">
                 Бесплатное OAuth-приложение с Client ID и Client Secret — вместо
                 cookie-сессии
@@ -797,11 +805,10 @@
                 Client Secret хранится только в памяти приложения и не покидает
                 ваш компьютер.
               </p>
-            </section>
-          </div>
+          </section>
 
           <section class="card">
-            <h2>2b. Cookie osu_session — резервный способ</h2>
+            <h2>2. Cookie osu_session — резервный способ</h2>
             <p class="hint">
               Нужна, только если зеркала не отдают нужный набор
             </p>
@@ -822,8 +829,8 @@
                 <button id="session-save" type="submit">Сохранить</button>
               </div>
               <p class="small">
-                Хранится только в памяти, пока работает приложение; при
-                перезапуске её нужно ввести снова.
+                Хранится только в оперативной памяти (до 6 часов либо до
+                перезапуска сервера).
               </p>
             </form>
             <div class="session-state">
@@ -983,7 +990,7 @@
           </section>
         </div>
 
-        <aside>
+        <aside class="cards-col">
           <section class="card">
             <h2>Как это работает</h2>
             <ol class="steps">
