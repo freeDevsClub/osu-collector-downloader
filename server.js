@@ -1114,7 +1114,13 @@ async function runJob(job, auth) {
   }
   job.currentSetId = null;
   job.currentMirror = null;
-  job.finishedAt = Date.now();
+  if (job.status === 'paused') {
+    job.pausedAt = Date.now();
+    delete job.finishedAt;
+  } else {
+    job.finishedAt = Date.now();
+    delete job.pausedAt;
+  }
   log(job.status === 'finished' ? 'info' : job.status === 'paused' || job.status === 'cancelled' ? 'warn' : 'error', 'download.job.finished', {
     jobId: job.id,
     status: job.status,
@@ -1615,7 +1621,9 @@ setInterval(() => {
     if (expiresAt <= now) oauthStates.delete(state);
   }
   for (const [id, job] of jobs) {
-    if (!['queued', 'running', 'paused'].includes(job.status) && now - job.finishedAt > 24 * 60 * 60 * 1000) {
+    // Приостановленные, выполняющиеся и находящиеся в очереди задачи не удаляются
+    if (['queued', 'running', 'paused'].includes(job.status)) continue;
+    if (job.finishedAt && now - job.finishedAt > 24 * 60 * 60 * 1000) {
       clearAutoResume(job);
       if (activeJob === job) activeJob = null;
       jobs.delete(id);
