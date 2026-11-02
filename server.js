@@ -235,7 +235,10 @@ async function fetchMapsetInfo(collectionId, setIds) {
       headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
       signal: AbortSignal.timeout(30000),
     });
-    if (!response.ok) throw new HttpError(502, `osu!Collector beatmapsV2 ответил HTTP ${response.status}.`);
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      throw new HttpError(502, `osu!Collector beatmapsV2 ответил HTTP ${response.status}.`);
+    }
     const data = await response.json();
     if (!Array.isArray(data.beatmaps)) throw new HttpError(502, 'osu!Collector вернул неожиданный формат beatmapsV2.');
 
@@ -318,7 +321,10 @@ async function fetchCollection(collectionId) {
         headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
         signal: AbortSignal.timeout(30000),
       });
-      if (!response.ok) throw new HttpError(response.status === 404 ? 404 : 502, `osu!Collector ответил HTTP ${response.status}.`);
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        throw new HttpError(response.status === 404 ? 404 : 502, `osu!Collector ответил HTTP ${response.status}.`);
+      }
       const data = await response.json();
       const setIds = parseSetIds(data);
       if (Array.isArray(data.beatmapsets) && setIds.length < data.beatmapsets.length) {
@@ -768,6 +774,9 @@ async function downloadSet(setId, auth, job) {
     }
     if (!REDIRECT_STATUSES.includes(response.status)) break;
     const location = response.headers.get('location');
+    // Освобождаем тело промежуточного ответа перед переходом по редиректу,
+    // чтобы undici мог вернуть сокет в пул keep-alive и не удерживал соединение открытым.
+    await response.body?.cancel().catch(() => {});
     if (!location) throw new Error('Сервер загрузки вернул пустое перенаправление.');
     const nextUrl = new URL(location, url);
     if (!(auth.kind === 'mirror' ? mirrorRedirectAllowed(nextUrl) : redirectHostAllowed(nextUrl))) {
@@ -776,7 +785,10 @@ async function downloadSet(setId, auth, job) {
     log('debug', 'map.download.redirected', { jobId: job.id, beatmapsetId: setId, status: response.status, host: nextUrl.hostname });
     url = nextUrl.href;
   }
-  if (!response || REDIRECT_STATUSES.includes(response.status)) throw new Error('Слишком много перенаправлений загрузки.');
+  if (!response || REDIRECT_STATUSES.includes(response.status)) {
+    await response?.body?.cancel().catch(() => {});
+    throw new Error('Слишком много перенаправлений загрузки.');
+  }
   if (!response.ok || !response.body) {
     const detail = await responsePreview(response);
     if (auth.kind === 'mirror') {
@@ -1355,14 +1367,18 @@ async function responsePreview(response, limit = 300) {
     if (!response.body) return '';
     const reader = response.body.getReader();
     let text = '';
-    while (Buffer.byteLength(text, 'utf8') < limit) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += Buffer.from(value).toString('utf8');
+    try {
+      while (Buffer.byteLength(text, 'utf8') < limit) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += Buffer.from(value).toString('utf8');
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
     }
-    await reader.cancel();
     return text.replace(/<[^>]*>/g, ' ').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limit);
   } catch {
+    await response.body?.cancel().catch(() => {});
     return '';
   }
 }
