@@ -686,6 +686,17 @@ async function isValidZipOnDisk(filePath) {
   }
 }
 
+async function writeAll(handle, buffer) {
+  let offset = 0;
+  while (offset < buffer.byteLength) {
+    const { bytesWritten } = await handle.write(buffer, offset, buffer.byteLength - offset);
+    if (bytesWritten === 0) {
+      throw new Error('Не удалось записать данные на диск: получено 0 байт при записи.');
+    }
+    offset += bytesWritten;
+  }
+}
+
 async function streamBodyToFile(reader, firstChunk, tempPath, job, expectedBytes, readTimeoutMs) {
   let handle;
   try {
@@ -721,7 +732,7 @@ async function streamBodyToFile(reader, firstChunk, tempPath, job, expectedBytes
       }
       job.currentBytes = received;
       job.currentPercent = job.currentTotalBytes ? Math.min(100, Math.floor(received / job.currentTotalBytes * 100)) : null;
-      await handle.write(chunk);
+      await writeAll(handle, chunk);
       chunk = null;
     }
     if (Number.isSafeInteger(expectedBytes) && received !== expectedBytes) {
