@@ -12,7 +12,9 @@ const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('PORT must be an integer between 1 and 65535.');
 const ROOT = __dirname;
-const DOWNLOADS_DIR = process.env.DOWNLOADS_DIR ? path.resolve(process.env.DOWNLOADS_DIR) : path.join(ROOT, 'downloads');
+function getDownloadsDir() {
+  return process.env.DOWNLOADS_DIR ? path.resolve(process.env.DOWNLOADS_DIR) : path.join(ROOT, 'downloads');
+}
 const SESSION_COOKIE = 'osu_session';
 const ZIP_SIGNATURES = [Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.from([0x50, 0x4b, 0x07, 0x08])];
 const jobs = new Map();
@@ -586,11 +588,12 @@ function isTransientError(error) {
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return 'unknown';
+  if (bytes === 0) return '0 Б';
   const units = ['Б', 'КБ', 'МБ', 'ГБ'];
   let value = bytes;
   let unit = 0;
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
-  return `${value >= 100 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+  return `${unit === 0 || value >= 100 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
 }
 
 function parseRetryAfter(header) {
@@ -723,21 +726,22 @@ function authHeaders(auth, requestUrl, referer) {
 let activeJob = null; // Одна активная задача на процесс — иначе удваиваются лимиты и риск 429 на зеркалах.
 
 function partPath(jobId, setId) {
-  return path.join(DOWNLOADS_DIR, `${setId}.${jobId}.part`);
+  return path.join(getDownloadsDir(), `${setId}.${jobId}.part`);
 }
 
 function jobFilePath(setId) {
-  return path.join(DOWNLOADS_DIR, `${setId}.osz`);
+  return path.join(getDownloadsDir(), `${setId}.osz`);
 }
 
 // Очистка .part-файлов конкретной задачи (по id в имени) — при завершении, отмене и на SIGINT.
 async function cleanupJobPartFiles(job) {
+  const dir = getDownloadsDir();
   const marker = `.${job.id}.part`;
   try {
-    const entries = await fs.promises.readdir(DOWNLOADS_DIR);
+    const entries = await fs.promises.readdir(dir);
     for (const entry of entries) {
       if (entry.endsWith(marker)) {
-        await fs.promises.rm(path.join(DOWNLOADS_DIR, entry), { force: true });
+        await fs.promises.rm(path.join(dir, entry), { force: true });
         log('debug', 'downloads.part_cleanup', { jobId: job.id, file: entry });
       }
     }
@@ -748,11 +752,12 @@ async function cleanupJobPartFiles(job) {
 
 // .part-файлы пережитка процесса ничего не доканчены — чистим их при старте и по завершении задачи.
 async function cleanupStalePartFiles() {
+  const dir = getDownloadsDir();
   try {
-    const entries = await fs.promises.readdir(DOWNLOADS_DIR);
+    const entries = await fs.promises.readdir(dir);
     for (const entry of entries) {
       if (entry.endsWith('.part')) {
-        await fs.promises.rm(path.join(DOWNLOADS_DIR, entry), { force: true });
+        await fs.promises.rm(path.join(dir, entry), { force: true });
         log('debug', 'downloads.part_cleanup', { file: entry });
       }
     }
@@ -764,12 +769,13 @@ async function cleanupStalePartFiles() {
 // Проверка свободного места перед стартом: крупные коллекции весят десятки ГБ.
 async function ensureDiskSpace(reserveBytes) {
   const minimumBytes = Math.max(Number(reserveBytes) || 0, 0) + 100 * 1024 * 1024; // запас 100 МБ
+  const dir = getDownloadsDir();
   try {
     // Гарантируем наличие папки downloads, чтобы statfs не падал с ENOENT на первом запуске проекта
-    await fs.promises.mkdir(DOWNLOADS_DIR, { recursive: true });
+    await fs.promises.mkdir(dir, { recursive: true });
     let stats;
     try {
-      stats = await fs.promises.statfs(DOWNLOADS_DIR);
+      stats = await fs.promises.statfs(dir);
     } catch {
       stats = await fs.promises.statfs(ROOT);
     }
@@ -1958,51 +1964,80 @@ setInterval(() => {
 }, 60 * 1000).unref();
 
 async function bootstrapAfterListen() {
-  await fs.promises.mkdir(DOWNLOADS_DIR, { recursive: true });
+  await fs.promises.mkdir(getDownloadsDir(), { recursive: true });
   await cleanupStalePartFiles(); // .part-файлы прошлого запуска процесса уже ни к чему не привязаны
 }
 
-server.listen(PORT, HOST, () => {
-  log('info', 'server.started', {
-    url: `http://${HOST}:${PORT}`,
-    node: process.version,
-    downloadsDirectory: DOWNLOADS_DIR,
-    oauthCallback: CALLBACK_URL,
-    oauthEnabled: ENABLE_OAUTH,
-    oauthConfigured: oauthConfigured(),
-    downloadMirrors: MIRRORS.map(mirror => mirror.id),
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    log('info', 'server.started', {
+      url: `http://${HOST}:${PORT}`,
+      node: process.version,
+      downloadsDirectory: getDownloadsDir(),
+      oauthCallback: CALLBACK_URL,
+      oauthEnabled: ENABLE_OAUTH,
+      oauthConfigured: oauthConfigured(),
+      downloadMirrors: MIRRORS.map(mirror => mirror.id),
+    });
+    log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.${ENABLE_OAUTH ? ' OAuth включён.' : ' OAuth отключён флагом (ENABLE_OAUTH=1 для включения).'}` });
   });
-  log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.${ENABLE_OAUTH ? ' OAuth включён.' : ' OAuth отключён флагом (ENABLE_OAUTH=1 для включения).'}` });
-});
 
-void bootstrapAfterListen();
+  void bootstrapAfterListen();
 
-server.on('error', error => {
-  log('error', 'server.failed', { error: safeErrorMessage(error), port: PORT });
-  // EADDRINUSE должен валить процесс ненулевым кодом, а не висеть с «успешным» ранее выведенным URL.
-  if (error?.code === 'EADDRINUSE') process.exit(1);
-});
-
-process.on('unhandledRejection', reason => {
-  log('error', 'process.unhandled_rejection', { error: safeErrorMessage(reason), stack: reason?.stack });
-});
-
-let isShuttingDown = false;
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, async () => {
-    if (isShuttingDown) return;
-    isShuttingDown = true;
-    for (const token of sessions.keys()) sessions.delete(token);
-    oauthStates.clear();
-    for (const job of jobs.values()) {
-      job.abortController?.abort();
-      clearAutoResume(job);
-    }
-    // Очищаем незавершённые .part-файлы при остановке процесса
-    await cleanupStalePartFiles().catch(() => {});
-    server.closeIdleConnections?.();
-    server.close(() => process.exit(0));
-    // Подстраховка: не зависаем на держащихся соединениях (длительные загрузки, keep-alive).
-    setTimeout(() => process.exit(0), 3000).unref();
+  server.on('error', error => {
+    log('error', 'server.failed', { error: safeErrorMessage(error), port: PORT });
+    // EADDRINUSE должен валить процесс ненулевым кодом, а не висеть с «успешным» ранее выведенным URL.
+    if (error?.code === 'EADDRINUSE') process.exit(1);
   });
+
+  process.on('unhandledRejection', reason => {
+    log('error', 'process.unhandled_rejection', { error: safeErrorMessage(reason), stack: reason?.stack });
+  });
+
+  let isShuttingDown = false;
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, async () => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
+      for (const token of sessions.keys()) sessions.delete(token);
+      oauthStates.clear();
+      for (const job of jobs.values()) {
+        job.abortController?.abort();
+        clearAutoResume(job);
+      }
+      // Очищаем незавершённые .part-файлы при остановке процесса
+      await cleanupStalePartFiles().catch(() => {});
+      server.closeIdleConnections?.();
+      server.close(() => process.exit(0));
+      // Подстраховка: не зависаем на держащихся соединениях (длительные загрузки, keep-alive).
+      setTimeout(() => process.exit(0), 3000).unref();
+    });
+  }
 }
+
+module.exports = {
+  server,
+  getDownloadsDir,
+  extractCollectionId,
+  parseRetryAfter,
+  verifyZipFile,
+  jobCounters,
+  formatBytes,
+  safeErrorMessage,
+  isPrivateIPv4,
+  isPrivateIPv6,
+  isPrivateIp,
+  mirrorRedirectAllowed,
+  redirectHostAllowed,
+  downloadFromMirrors,
+  downloadSet,
+  fetchMapsetInfo,
+  parseSetIds,
+  fallbackMapInfo,
+  MIRRORS,
+  mirrorCooldowns,
+  jobs,
+  sessions,
+  oauthStates,
+  HttpError,
+};
