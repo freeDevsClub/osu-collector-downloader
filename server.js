@@ -580,6 +580,27 @@ async function ensureDiskSpace(reserveBytes) {
   }
 }
 
+// Оценка требуемого места с учётом уже скачанных файлов (чтобы не требовать место под 4000 уже существующих файлов)
+async function estimateRequiredDiskSpace(setIds) {
+  let missingCount = 0;
+  for (const id of setIds) {
+    try {
+      const stat = await fs.promises.stat(jobFilePath(id));
+      if (stat.size <= 0) missingCount++;
+    } catch {
+      missingCount++;
+    }
+  }
+  return missingCount * 10 * 1024 * 1024; // ~10 МБ на отсутствующий набор
+}
+
+function isNoSpaceError(error) {
+  if (!error) return false;
+  if (error.code === 'ENOSPC' || error.cause?.code === 'ENOSPC') return true;
+  const msg = String(error.message || '').toLowerCase();
+  return msg.includes('enospc') || msg.includes('no space left on device') || msg.includes('на диске мало места') || msg.includes('диск переполнен') || msg.includes('недостаточно места');
+}
+
 // Таймаут без данных (нет ни байта за N секунд) — отличаем зависшее соединение от медленного, но живого.
 const CONNECT_TIMEOUT_MS = 60 * 1000;   // соединение, заголовки, редиректы и каждый запрос токена
 const BODY_STALL_TIMEOUT_MS = 90 * 1000; // «замолчал» во время передачи тела
@@ -976,6 +997,7 @@ async function runJob(job, auth) {
   let lastRequest = 0;
   let stopAfterCurrent = false;
   let stopForCooldown = false;
+  let stopForNoSpace = false;
   const deferredSetIds = new Set();
   for (const setId of job.setIds) {
     if (job.status === 'cancelled') break;
@@ -1018,7 +1040,11 @@ async function runJob(job, auth) {
       else await downloadSet(setId, auth, job);
     } catch (error) {
       if (job.status !== 'cancelled') {
-        if (error.allCooldown) {
+        if (isNoSpaceError(error)) {
+          job.message = `Набор ${setId}: на диске закончилось свободное место (ENOSPC). Загрузка приостановлена — освободите место и нажмите «Продолжить».`;
+          stopForNoSpace = true;
+          log('error', 'download.job.enospc', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
+        } else if (error.allCooldown) {
           job.message = `Все зеркала временно ограничили загрузки (HTTP 429). Загрузка приостановлена — повторите позже, готовые файлы будут пропущены.`;
           stopForCooldown = true;
           log('warn', 'download.job.all_cooldown', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
@@ -1044,11 +1070,11 @@ async function runJob(job, auth) {
     }
     lastRequest = Date.now();
     if (job.status === 'cancelled') break;
-    if (stopAfterCurrent || stopForCooldown) break;
+    if (stopAfterCurrent || stopForCooldown || stopForNoSpace) break;
   }
 
   // Второй проход: пробуем заново наборы, которые были отложены из-за остывания зеркал
-  if (job.status !== 'cancelled' && !stopAfterCurrent && !stopForCooldown && deferredSetIds.size > 0) {
+  if (job.status !== 'cancelled' && !stopAfterCurrent && !stopForCooldown && !stopForNoSpace && deferredSetIds.size > 0) {
     log('info', 'download.job.retry_deferred_started', { jobId: job.id, count: deferredSetIds.size });
     for (const setId of deferredSetIds) {
       if (job.status === 'cancelled') break;
@@ -1068,7 +1094,12 @@ async function runJob(job, auth) {
         deferredSetIds.delete(setId);
       } catch (error) {
         if (job.status !== 'cancelled') {
-          if (error.allCooldown || error.deferSet) {
+          if (isNoSpaceError(error)) {
+            job.message = `Набор ${setId}: на диске закончилось свободное место (ENOSPC). Загрузка приостановлена — освободите место и нажмите «Продолжить».`;
+            stopForNoSpace = true;
+            log('error', 'download.job.enospc', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
+            break;
+          } else if (error.allCooldown || error.deferSet) {
             job.message = `Набор ${setId}: зеркала остывают — загрузка приостановлена.`;
             stopForCooldown = true;
             log('warn', 'download.job.deferred_final_pause', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
@@ -1091,7 +1122,7 @@ async function runJob(job, auth) {
         job.abortController = null;
       }
       lastRequest = Date.now();
-      if (stopAfterCurrent || stopForCooldown) break;
+      if (stopAfterCurrent || stopForCooldown || stopForNoSpace) break;
     }
   }
   const counters = jobCounters(job);
@@ -1100,10 +1131,15 @@ async function runJob(job, auth) {
       job.status = 'paused';
       const processed = counters.downloaded + counters.skipped;
       const failedNote = counters.failed ? `, с ошибками: ${counters.failed}` : '';
-      job.message = `Зеркала временно ограничили загрузки — получено ${processed} из ${job.setIds.length}${failedNote}.`;
-      scheduleAutoResume(job);
-      if (job.autoResumeAt) job.message += ' Загрузка продолжится автоматически после паузы зеркал, готовые файлы будут пропущены.';
-      else job.message += ' Нажмите «Продолжить», когда пауза зеркал закончится: готовые файлы будут пропущены.';
+      if (stopForNoSpace) {
+        job.message = `На диске закончилось свободное место — получено ${processed} из ${job.setIds.length}${failedNote}. Освободите место на диске и нажмите «Продолжить».`;
+        clearAutoResume(job);
+      } else {
+        job.message = `Зеркала временно ограничили загрузки — получено ${processed} из ${job.setIds.length}${failedNote}.`;
+        scheduleAutoResume(job);
+        if (job.autoResumeAt) job.message += ' Загрузка продолжится автоматически после паузы зеркал, готовые файлы будут пропущены.';
+        else job.message += ' Нажмите «Продолжить», когда пауза зеркал закончится: готовые файлы будут пропущены.';
+      }
     } else if (counters.failed) {
       job.status = 'finished_with_errors';
       job.message = `Готово с ошибками: ${counters.failed} из ${job.setIds.length}.${counters.deferred ? ' Часть наборов отложена — нажмите «Продолжить» позже.' : ''}`;
@@ -1484,7 +1520,8 @@ async function handleApi(req, res, url) {
     activeJob = job;
     jobs.set(job.id, job);
     try {
-      await ensureDiskSpace(setIds.length * 10 * 1024 * 1024); // ~10 МБ на набор — предварительная проверка диска
+      const requiredBytes = await estimateRequiredDiskSpace(setIds);
+      await ensureDiskSpace(requiredBytes); // проверка диска с учётом уже имеющихся на диске наборов
     } catch (error) {
       jobs.delete(job.id);
       if (activeJob === job) activeJob = null;
@@ -1527,6 +1564,13 @@ async function handleApi(req, res, url) {
       const session = getSession(req);
       if (!session) return json(res, 401, { error: 'Сначала сохраните cookie osu_session в приложении.' });
       auth = { kind: 'session', session };
+    }
+    try {
+      const requiredBytes = await estimateRequiredDiskSpace(job.setIds);
+      await ensureDiskSpace(requiredBytes);
+    } catch (error) {
+      if (error instanceof HttpError) return json(res, error.httpStatus, { error: error.message });
+      return json(res, 507, { error: safeErrorMessage(error) });
     }
     job.autoResumeCount = 0;
     resumeJob(job, auth);
