@@ -21,6 +21,7 @@ const oauthConfig = { clientId: null, clientSecret: null };
 const oauthToken = { accessToken: null, refreshToken: null, expiresAt: 0, scope: null, kind: null };
 const oauthStates = new Map();
 const tokenCookie = 'osu_collector_token';
+const OAUTH_STATE_COOKIE = 'osu_oauth_state';
 const OAUTH_AUTHORIZE_ENDPOINT = 'https://osu.ppy.sh/oauth/authorize';
 const OAUTH_TOKEN_ENDPOINT = 'https://osu.ppy.sh/oauth/token';
 const OSU_API_BASE = 'https://osu.ppy.sh/api/v2';
@@ -105,7 +106,7 @@ function ensureLocalRequest(req, res) {
   }
   if (secFetchSite && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
     const pathname = (req.url || '').split('?')[0];
-    const isOauthCallback = pathname === '/oauth/callback' && req.method === 'GET' && req.headers['sec-fetch-mode'] === 'navigate';
+    const isOauthCallback = pathname === '/oauth/callback' && req.method === 'GET';
     if (!isOauthCallback) {
       json(res, 403, { error: 'Межсайтовые запросы запрещены (Sec-Fetch-Site).' });
       return false;
@@ -1560,9 +1561,17 @@ async function handleOauthCallback(req, res, url) {
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   if (!code || !state) return fail('В ответе osu! нет code или state.');
-  const expiresAt = oauthStates.get(state);
+  const entry = oauthStates.get(state);
   oauthStates.delete(state);
-  if (!expiresAt || expiresAt <= Date.now()) return fail('Некорректный или просроченный параметр state — повторите вход.');
+  if (!entry || entry.expiresAt <= Date.now()) return fail('Некорректный или просроченный параметр state — повторите вход.');
+
+  const cookies = parseCookies(req.headers.cookie);
+  const clientNonce = cookies[OAUTH_STATE_COOKIE];
+  res.setHeader('Set-Cookie', `${OAUTH_STATE_COOKIE}=; Path=/oauth/callback; HttpOnly; SameSite=Lax; Max-Age=0`);
+  if (!clientNonce || clientNonce !== entry.nonce) {
+    return fail('Несовпадение сессии OAuth (защита от CSRF) — повторите вход из того же браузера.');
+  }
+
   if (!oauthConfigured()) return fail('OAuth-приложение больше не настроено.');
 
   try {
@@ -1624,8 +1633,11 @@ async function handleApi(req, res, url) {
     }
     if (!oauthConfigured()) return json(res, 400, { error: 'Сначала сохраните Client ID и Client Secret.' });
     const state = crypto.randomBytes(24).toString('hex');
-    oauthStates.set(state, Date.now() + OAUTH_STATE_TTL_MS);
+    const nonce = crypto.randomBytes(24).toString('hex');
+    oauthStates.set(state, { nonce, expiresAt: Date.now() + OAUTH_STATE_TTL_MS });
     log('info', 'oauth.authorize.started', { callback: CALLBACK_URL, scope: 'public identify' });
+    const secure = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+    res.setHeader('Set-Cookie', `${OAUTH_STATE_COOKIE}=${nonce}; Path=/oauth/callback; HttpOnly; SameSite=Lax; Max-Age=${Math.round(OAUTH_STATE_TTL_MS / 1000)}${secure ? '; Secure' : ''}`);
     return json(res, 200, { authorizeUrl: buildAuthorizeUrl(state) });
   }
   if (req.method === 'DELETE' && url.pathname === '/api/oauth/disconnect') {
@@ -1638,6 +1650,7 @@ async function handleApi(req, res, url) {
     oauthToken.kind = null;
     oauthToken.scope = null;
     oauthStates.clear();
+    res.setHeader('Set-Cookie', `${OAUTH_STATE_COOKIE}=; Path=/oauth/callback; HttpOnly; SameSite=Lax; Max-Age=0`);
     log('info', 'oauth.disconnected');
     return json(res, 200, oauthStatus());
   }
@@ -1898,8 +1911,8 @@ setInterval(() => {
   for (const [token, session] of sessions) {
     if (session.expiresAt <= now) sessions.delete(token);
   }
-  for (const [state, expiresAt] of oauthStates) {
-    if (expiresAt <= now) oauthStates.delete(state);
+  for (const [state, entry] of oauthStates) {
+    if (entry?.expiresAt <= now) oauthStates.delete(state);
   }
   for (const [id, job] of jobs) {
     // Приостановленные, выполняющиеся и находящиеся в очереди задачи не удаляются
