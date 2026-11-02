@@ -610,9 +610,14 @@ async function verifyZipFile(handle, totalSize) {
   for (let i = slice.length - 22; i >= 0; i--) {
     if (slice[i] === 0x50 && slice[i + 1] === 0x4b && slice[i + 2] === 0x05 && slice[i + 3] === 0x06) {
       const commentLen = slice.readUInt16LE(i + 20);
-      if (i + 22 + commentLen === slice.length) {
+      // EOCD может иметь хвостовой паддинг (выравнивание секторов, оверлеи)
+      if (i + 22 + commentLen <= slice.length) {
         return true;
       }
+    }
+    // Проверяем ZIP64 locator (0x50, 0x4b, 0x06, 0x07) или ZIP64 EOCD record (0x50, 0x4b, 0x06, 0x06)
+    if (slice[i] === 0x50 && slice[i + 1] === 0x4b && slice[i + 2] === 0x06 && (slice[i + 3] === 0x06 || slice[i + 3] === 0x07)) {
+      return true;
     }
   }
   return false;
@@ -982,8 +987,10 @@ async function runJob(job, auth) {
           log('info', 'map.download.skipped', { jobId: job.id, beatmapsetId: setId, reason: 'file already exists', sizeBytes: existing.size });
           continue;
         } else {
-          log('warn', 'map.download.existing_file_corrupt', { jobId: job.id, beatmapsetId: setId, file: path.basename(filePath), sizeBytes: existing.size });
-          await fs.promises.rm(filePath, { force: true }).catch(() => {});
+          // Не удаляем файл заранее: он может быть валидным (с нестандартным хвостом/ZIP64) или положен вручную.
+          // Если загрузка замены в .part пройдёт успешно, он будет атомарно заменён через fs.promises.rename.
+          // Если загрузка сорвётся (404/кулдаун/сеть), локальный файл пользователя не будет уничтожен.
+          log('warn', 'map.download.existing_file_unverified', { jobId: job.id, beatmapsetId: setId, file: path.basename(filePath), sizeBytes: existing.size });
         }
       }
     } catch {}
