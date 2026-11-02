@@ -94,11 +94,20 @@ function parseCookies(header = '') {
 function ensureLocalRequest(req, res) {
   const host = req.headers.host || '';
   const origin = req.headers.origin;
+  const secFetchSite = req.headers['sec-fetch-site'];
   const localHost = host === `127.0.0.1:${PORT}` || host === `localhost:${PORT}` || host === `[::1]:${PORT}`;
   const localOrigin = !origin || origin === `http://127.0.0.1:${PORT}` || origin === `http://localhost:${PORT}` || origin === `http://[::1]:${PORT}`;
   if (!localHost || !localOrigin) {
     json(res, 403, { error: 'Доступ разрешён только с этого компьютера.' });
     return false;
+  }
+  if (secFetchSite && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
+    const pathname = (req.url || '').split('?')[0];
+    const isOauthCallback = pathname === '/oauth/callback' && req.method === 'GET' && req.headers['sec-fetch-mode'] === 'navigate';
+    if (!isOauthCallback) {
+      json(res, 403, { error: 'Межсайтовые запросы запрещены (Sec-Fetch-Site).' });
+      return false;
+    }
   }
   return true;
 }
