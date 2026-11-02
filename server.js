@@ -447,6 +447,28 @@ function clearAutoResume(job) {
   job.autoResumeAt = null;
 }
 
+function launchJob(job, auth) {
+  runJob(job, auth).catch(error => {
+    log('error', 'download.job.unhandled_rejection', { jobId: job?.id, error: safeErrorMessage(error), stack: error?.stack });
+    if (job) {
+      if (!['finished', 'finished_with_errors', 'cancelled', 'paused'].includes(job.status)) {
+        job.status = 'finished_with_errors';
+      }
+      job.finishedAt = Date.now();
+      delete job.pausedAt;
+      job.message = `Критический сбой задачи: ${safeErrorMessage(error)}`;
+      job.errorsById?.set('fatal', {
+        id: 'fatal',
+        name: 'Системный сбой',
+        error: safeErrorMessage(error),
+      });
+    }
+    if (activeJob === job) {
+      activeJob = null;
+    }
+  });
+}
+
 function resumeJob(job, auth, trigger = 'manual') {
   clearAutoResume(job);
   if (activeJob && activeJob !== job && ['queued', 'running'].includes(activeJob.status)) {
@@ -471,7 +493,7 @@ function resumeJob(job, auth, trigger = 'manual') {
     total: job.setIds.length,
     attempt: job.autoResumeCount || 0,
   });
-  void runJob(job, auth);
+  launchJob(job, auth);
 }
 
 // Приостановленную из-за лимитов зеркал задачу возобновляем сами, когда остынет ближайшее зеркало.
@@ -1163,7 +1185,22 @@ async function runJob(job, auth) {
     total: job.setIds.length,
     ...counters,
   });
+  } catch (fatalError) {
+    job.status = 'finished_with_errors';
+    const errMessage = safeErrorMessage(fatalError);
+    job.message = `Критический сбой задачи: ${errMessage}`;
+    job.errorsById?.set('fatal', {
+      id: 'fatal',
+      name: 'Системный сбой',
+      error: errMessage,
+    });
+    job.finishedAt = Date.now();
+    delete job.pausedAt;
+    log('error', 'download.job.fatal_error', { jobId: job.id, error: errMessage, stack: fatalError?.stack });
   } finally {
+    job.currentSetId = null;
+    job.currentMirror = null;
+    job.abortController = null;
     await cleanupJobPartFiles(job).catch(() => {});
     if (activeJob === job && !['queued', 'running', 'paused'].includes(job.status)) {
       activeJob = null;
@@ -1528,7 +1565,7 @@ async function handleApi(req, res, url) {
       throw error;
     }
     log('info', 'download.job.created', { jobId: job.id, method, mirrors: method === 'mirror' ? MIRRORS.map(mirror => mirror.id) : undefined, collectionId, collectionName: job.collectionName, total: setIds.length });
-    void runJob(job, auth);
+    launchJob(job, auth);
     return json(res, 202, safeJobForClient(job));
   }
   const resumeMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/resume$/);
@@ -1698,6 +1735,10 @@ server.on('error', error => {
   log('error', 'server.failed', { error: safeErrorMessage(error), port: PORT });
   // EADDRINUSE должен валить процесс ненулевым кодом, а не висеть с «успешным» ранее выведенным URL.
   if (error?.code === 'EADDRINUSE') process.exit(1);
+});
+
+process.on('unhandledRejection', reason => {
+  log('error', 'process.unhandled_rejection', { error: safeErrorMessage(reason), stack: reason?.stack });
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
