@@ -8,6 +8,7 @@ downloads/
 
 # Runtime and logs
 server.pid
+*.pid
 *.log
 .env
 

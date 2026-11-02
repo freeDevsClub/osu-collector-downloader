@@ -12,7 +12,7 @@ const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('PORT must be an integer between 1 and 65535.');
 const ROOT = __dirname;
-const DOWNLOADS_DIR = path.join(ROOT, 'downloads');
+const DOWNLOADS_DIR = process.env.DOWNLOADS_DIR ? path.resolve(process.env.DOWNLOADS_DIR) : path.join(ROOT, 'downloads');
 const SESSION_COOKIE = 'osu_session';
 const ZIP_SIGNATURES = [Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.from([0x50, 0x4b, 0x07, 0x08])];
 const jobs = new Map();
@@ -28,18 +28,50 @@ const OSU_API_BASE = 'https://osu.ppy.sh/api/v2';
 const CALLBACK_URL = (process.env.OSU_OAUTH_CALLBACK || `http://127.0.0.1:${PORT}/oauth/callback`).replace(/\/+$/, '');
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const MAX_BODY = 64 * 1024;
-const DOWNLOAD_DELAY_MS = 1100;
-const USER_AGENT = 'osu-collector-local-downloader/1.0';
-const MIRRORS = [
+const DOWNLOAD_DELAY_MS = Math.max(0, Number(process.env.DOWNLOAD_DELAY_MS ?? 1100));
+const USER_AGENT = process.env.USER_AGENT || 'osu-collector-local-downloader/1.0';
+
+const DEFAULT_MIRRORS = [
   { id: 'osudirect', label: 'osu.direct', build: id => `https://osu.direct/d/${id}` },
   { id: 'hinamizawa', label: 'Hinamizawa', build: id => `https://mirror.hinamizawa.ai/api/v1/hinai/d/${id}` },
   { id: 'osudl', label: 'osu!dl', build: id => `https://osudl.org/s/${id}` },
 ];
-const MIRROR_COOLDOWN_DEFAULT_MS = 60 * 1000;
-const MIRROR_COOLDOWN_MAX_MS = 15 * 60 * 1000;
-const MIRROR_COOLDOWN_WAIT_MAX_MS = 30 * 1000;
+
+function initMirrors() {
+  if (process.env.OSU_MIRRORS) {
+    try {
+      const parsed = JSON.parse(process.env.OSU_MIRRORS);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((m, idx) => ({
+          id: String(m.id || `mirror_${idx}`),
+          label: String(m.label || m.id || `Зеркало ${idx + 1}`),
+          build: typeof m.url === 'string' ? (id => m.url.replace('{id}', id)) : (m.build || (id => `https://osu.direct/d/${id}`)),
+        }));
+      }
+    } catch {
+      const templates = process.env.OSU_MIRRORS.split(',').map(s => s.trim()).filter(Boolean);
+      if (templates.length > 0) {
+        return templates.map((tmpl, idx) => {
+          let host = `mirror_${idx}`;
+          try { host = new URL(tmpl.replace('{id}', '1')).hostname; } catch {}
+          return {
+            id: `mirror_${idx}`,
+            label: host,
+            build: id => (tmpl.includes('{id}') ? tmpl.replace('{id}', id) : `${tmpl.replace(/\/+$/, '')}/${id}`),
+          };
+        });
+      }
+    }
+  }
+  return DEFAULT_MIRRORS;
+}
+
+const MIRRORS = initMirrors();
+const MIRROR_COOLDOWN_DEFAULT_MS = Math.max(1000, Number(process.env.MIRROR_COOLDOWN_DEFAULT_MS ?? 60 * 1000));
+const MIRROR_COOLDOWN_MAX_MS = Math.max(MIRROR_COOLDOWN_DEFAULT_MS, Number(process.env.MIRROR_COOLDOWN_MAX_MS ?? 15 * 60 * 1000));
+const MIRROR_COOLDOWN_WAIT_MAX_MS = Math.max(1000, Number(process.env.MIRROR_COOLDOWN_WAIT_MAX_MS ?? 30 * 1000));
 const AUTO_RESUME_GRACE_MS = 1000;
-const AUTO_RESUME_MAX_ATTEMPTS = 8;
+const AUTO_RESUME_MAX_ATTEMPTS = Math.max(1, Number(process.env.AUTO_RESUME_MAX_ATTEMPTS ?? 8));
 const mirrorCooldowns = new Map();
 
 const LOG_DEBUG = /^(1|true|yes)$/i.test(process.env.DEBUG || '');
@@ -231,10 +263,10 @@ function fallbackMapInfo(setIds) {
   return setIds.map(id => ({ id, label: `Набор ${id}`, title: null, artist: null, creator: null }));
 }
 
-const PAGINATION_PAGE_LIMIT = 300; // До 30 000 карт — покрывает типичные коллекции из 5000 наборов (~20-30k карт)
-const PAGINATION_DELAY_MS = 50; // Пауза между запросами к чужому API для предотвращения 429 и всплесков нагрузки
-const MAPSET_FETCH_BUDGET_MS = 40000; // Клиент ждёт 60 с; 40 с дают гарантированный запас на завершение и ответ
-const PAGE_FETCH_TIMEOUT_MS = 8000;
+const PAGINATION_PAGE_LIMIT = Math.max(1, Number(process.env.PAGINATION_PAGE_LIMIT ?? 300)); // До 30 000 карт — покрывает типичные коллекции из 5000 наборов (~20-30k карт)
+const PAGINATION_DELAY_MS = Math.max(0, Number(process.env.PAGINATION_DELAY_MS ?? 50)); // Пауза между запросами к чужому API для предотвращения 429 и всплесков нагрузки
+const MAPSET_FETCH_BUDGET_MS = Math.max(5000, Number(process.env.MAPSET_FETCH_BUDGET_MS ?? 40000)); // Клиент ждёт 60 с; 40 с дают гарантированный запас на завершение и ответ
+const PAGE_FETCH_TIMEOUT_MS = Math.max(1000, Number(process.env.PAGE_FETCH_TIMEOUT_MS ?? 8000));
 
 async function fetchMapsetInfo(collectionId, setIds) {
   const infoById = new Map();
