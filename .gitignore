@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Downloads & Beatmap archives
+downloads/
+*.osz
+*.part
+
+# Runtime and logs
+server.pid
+*.log
+.env
+
+# System & metadata
+.cloud-attachments/
+.DS_Store
+Thumbs.db

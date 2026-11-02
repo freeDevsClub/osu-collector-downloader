@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#15151c" />
+    <title>osu!Collector Downloader</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111116;
+        --panel: #1b1b23;
+        --panel2: #22222c;
+        --line: #32323e;
+        --text: #f4f2f7;
+        --muted: #aaa7b5;
+        --pink: #ff6eaa;
+        --pink2: #f34e91;
+        --green: #80ddb0;
+        --red: #ff929a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(ellipse at 82% -12%, #392338 0, transparent 40%),
+          var(--bg);
+        color: var(--text);
+        font:
+          15px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        min-height: 100vh;
+      }
+      .shell {
+        width: min(100% - 36px, 1020px);
+        margin: 0 auto;
+        padding: 44px 0 64px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 32px;
+      }
+      .logo {
+        display: grid;
+        place-items: center;
+        width: 52px;
+        height: 52px;
+        flex: 0 0 auto;
+        border-radius: 17px;
+        background: linear-gradient(145deg, #ff86b9, #d94080);
+        box-shadow: 0 10px 35px #ed4f9250;
+        color: white;
+        font-weight: 900;
+        font-size: 23px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(22px, 4vw, 30px);
+        letter-spacing: -0.04em;
+      }
+      header p {
+        color: var(--muted);
+        margin: 3px 0 0;
+      }
+      .badge {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        padding: 8px 12px;
+        border-radius: 999px;
+        color: #dad7e1;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .badge:before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 10px #80ddb080;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+        gap: 18px;
+        align-items: start;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: linear-gradient(150deg, #1c1c25, #191920);
+        padding: 23px;
+        box-shadow: 0 18px 55px #0002;
+      }
+      .card + .card {
+        margin-top: 18px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 0 0 5px;
+        letter-spacing: -0.02em;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0 0 18px;
+      }
+      label {
+        display: block;
+        margin: 0 0 7px;
+        color: #d5d2dd;
+        font-size: 13px;
+        font-weight: 650;
+      }
+      input {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        padding: 13px 14px;
+        border: 1px solid #3a3946;
+        border-radius: 10px;
+        background: #14141a;
+        color: var(--text);
+        outline: none;
+        font: inherit;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      input:focus {
+        border-color: var(--pink);
+        box-shadow: 0 0 0 3px #ff6eaa22;
+      }
+      input::placeholder {
+        color: #777483;
+      }
+      .field + .field {
+        margin-top: 16px;
+      }
+      .field-row {
+        display: flex;
+        gap: 9px;
+      }
+      .field-row input {
+        flex: 1;
+      }
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 16px;
+        background: var(--pink);
+        color: #26111b;
+        font: inherit;
+        font-weight: 750;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          transform 0.15s,
+          opacity 0.15s;
+        white-space: nowrap;
+      }
+      button:hover:not(:disabled) {
+        background: #ff8aba;
+        transform: translateY(-1px);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      button.secondary {
+        background: var(--panel2);
+        color: var(--text);
+        border: 1px solid var(--line);
+      }
+      button.secondary:hover:not(:disabled) {
+        background: #2d2d39;
+      }
+      button.danger {
+        color: #ffbdc2;
+      }
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+      .small a,
+      .notice a {
+        color: #ffa3c8;
+        text-underline-offset: 3px;
+      }
+      .session-state {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: #14141a;
+        padding: 12px;
+        margin-top: 17px;
+      }
+      .session-label {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 13px;
+      }
+      .session-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #777483;
+      }
+      .session-dot.connected {
+        background: var(--green);
+        box-shadow: 0 0 10px #80ddb080;
+      }
+      .session-state button {
+        padding: 7px 10px;
+        font-size: 12px;
+      }
+      .notice {
+        border: 1px solid #514134;
+        background: #28221d;
+        border-radius: 11px;
+        padding: 12px 13px;
+        color: #ded1c3;
+        font-size: 12px;
+        margin-top: 18px;
+      }
+      .notice strong {
+        color: #fff0dc;
+      }
+      .notice p {
+        margin: 4px 0 0;
+      }
+      .collection {
+        display: none;
+      }
+      .collection.visible {
+        display: block;
+      }
+      .collection-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .collection-top h2 {
+        font-size: 20px;
+      }
+      .collection-meta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 5px 9px;
+        color: #d2cfda;
+        font-size: 12px;
+        background: #15151b;
+      }
+      .map-list {
+        border-top: 1px solid var(--line);
+        margin-top: 17px;
+        padding-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        max-height: 340px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-right: 6px;
+        scrollbar-width: thin;
+        scrollbar-color: #4a4855 transparent;
+      }
+      .map-list::-webkit-scrollbar {
+        width: 9px;
+      }
+      .map-list::-webkit-scrollbar-thumb {
+        background: #3a3946;
+        border-radius: 99px;
+        border: 2px solid #1c1c25;
+      }
+      .map-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .map-id {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        background: #23232d;
+        border: 1px solid #2c2c37;
+        border-radius: 9px;
+        color: #d8d5df;
+        padding: 10px 12px;
+        font-size: 12px;
+        min-width: 0;
+        content-visibility: auto;
+        contain-intrinsic-size: auto 54px;
+      }
+      .map-title {
+        color: #f0edf4;
+        font-weight: 650;
+        overflow-wrap: anywhere;
+      }
+      .map-artist {
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .method-row {
+        display: flex;
+        gap: 9px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+      .method-option {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        flex: 1;
+        min-width: 190px;
+        border: 1px solid var(--line);
+        background: #14141a;
+        border-radius: 10px;
+        padding: 11px 13px;
+        font-size: 13px;
+        color: #d5d2dd;
+        cursor: pointer;
+        margin: 0;
+        font-weight: 650;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      .method-option:has(input:checked),
+      .method-option.selected {
+        border-color: var(--pink);
+        box-shadow: 0 0 0 3px #ff6eaa22;
+        color: #fff;
+      }
+      .method-option input {
+        width: auto;
+        accent-color: var(--pink);
+        margin: 0;
+      }
+      .method-option small {
+        display: block;
+        font-weight: 400;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .method-option.locked {
+        opacity: 0.5;
+      }
+      .mirror-panel {
+        margin-top: 14px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: #14141a;
+        padding: 10px 12px;
+      }
+      .mirror-head {
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 7px;
+      }
+      .mirror-status {
+        display: grid;
+        gap: 6px;
+      }
+      .mirror-row {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 12px;
+      }
+      .mirror-name {
+        color: #e6e2ec;
+      }
+      .mirror-state {
+        margin-left: auto;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .mirror-state.cooling {
+        color: #ffcf8a;
+      }
+      .session-dot.cooling {
+        background: #ffcf8a;
+        box-shadow: 0 0 10px #ffcf8a66;
+      }
+      .oauth-callback {
+        display: block;
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .oauth-callback code {
+        background: #14141a;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 2px 5px;
+      }
+      .transfer-details {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 8px;
+      }
+      .transfer-track {
+        height: 13px;
+        border-radius: 99px;
+        overflow: hidden;
+        background: #101015;
+        border: 1px solid #3a3946;
+        margin-top: 7px;
+      }
+      .transfer-bar {
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, #dc4b8a, #ff91bb);
+        transition: width 0.25s;
+        border-radius: inherit;
+      }
+      .action-row {
+        display: flex;
+        gap: 9px;
+        margin-top: 19px;
+      }
+      .action-row button {
+        flex: 1;
+      }
+      .progress-wrap {
+        margin-top: 18px;
+        display: none;
+      }
+      .progress-wrap.visible {
+        display: block;
+      }
+      .progress-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        color: #e6e2ec;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      .progress-track {
+        height: 9px;
+        border-radius: 99px;
+        overflow: hidden;
+        background: #101015;
+        border: 1px solid #30303a;
+      }
+      .progress-bar {
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, #dc4b8a, #ff91bb);
+        transition: width 0.3s;
+        border-radius: inherit;
+      }
+      .status {
+        min-height: 20px;
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 8px;
+      }
+      .status.error {
+        color: var(--red);
+      }
+      .status.success {
+        color: var(--green);
+      }
+      .status.warn {
+        color: #ffcf8a;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 13px;
+      }
+      .stat {
+        border-radius: 9px;
+        background: #16161d;
+        padding: 9px;
+        text-align: center;
+      }
+      .stat b {
+        display: block;
+        font-size: 17px;
+      }
+      .stat span {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .steps {
+        list-style: none;
+        margin: 17px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 14px;
+      }
+      .steps li {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .step-no {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #484653;
+        border-radius: 9px;
+        color: #ff9ec5;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .steps strong {
+        color: #e8e5ee;
+        font-weight: 650;
+      }
+      footer {
+        text-align: center;
+        padding-top: 23px;
+        color: #797685;
+        font-size: 12px;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 22px;
+        transform: translate(-50%, 20px);
+        opacity: 0;
+        pointer-events: none;
+        background: #33313c;
+        border: 1px solid #4a4855;
+        padding: 11px 15px;
+        border-radius: 11px;
+        color: #fff;
+        box-shadow: 0 12px 35px #0006;
+        transition: 0.2s;
+        max-width: min(90vw, 540px);
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      @media (max-width: 740px) {
+        .shell {
+          width: min(100% - 24px, 570px);
+          padding-top: 26px;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        header {
+          margin-bottom: 22px;
+        }
+        .badge {
+          padding: 7px 8px;
+        }
+        .badge-text {
+          display: none;
+        }
+        .badge:before {
+          width: 8px;
+          height: 8px;
+        }
+        .card {
+          padding: 19px;
+        }
+      }
+      @media (max-width: 450px) {
+        .field-row {
+          flex-direction: column;
+        }
+        .field-row button {
+          width: 100%;
+        }
+        .collection-top {
+          flex-direction: column;
+        }
+        .action-row {
+          flex-direction: column;
+        }
+      }
+    </style>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="logo" aria-hidden="true">osu!</div>
+        <div>
+          <h1>osu!Collector Downloader</h1>
+          <p>Загружайте коллекции карт на свой компьютер</p>
+        </div>
+        <div class="badge" aria-label="Только на этом компьютере"><span class="badge-text">Только на этом компьютере</span></div>
+      </header>
+
+      <div class="grid">
+        <div>
+          <section class="card">
+            <h2>1. Ссылка на коллекцию</h2>
+            <p class="hint">Публичная коллекция с osucollector.com</p>
+            <form id="collection-form">
+              <div class="field">
+                <label for="collection-url">URL или ID коллекции</label>
+                <div class="field-row">
+                  <input
+                    id="collection-url"
+                    name="url"
+                    type="text"
+                    placeholder="https://osucollector.com/collections/23905/… или ID"
+                    autocomplete="url"
+                    required
+                  />
+                  <button id="preview-button" type="submit">
+                    Показать карты
+                  </button>
+                </div>
+              </div>
+            </form>
+            <div
+              id="collection-status"
+              class="status"
+              role="status"
+              aria-live="polite"
+            ></div>
+            <div id="collection-card" class="collection">
+              <div class="collection-top">
+                <div>
+                  <h2 id="collection-name"></h2>
+                  <div id="collection-uploader" class="small"></div>
+                </div>
+                <span id="collection-count" class="chip"></span>
+              </div>
+              <div id="collection-meta" class="collection-meta"></div>
+              <div
+                id="map-list"
+                class="map-list"
+                aria-label="Список наборов карт"
+              ></div>
+            </div>
+          </section>
+
+          <!-- Метод OAuth временно скрыт в интерфейсе: серверная и клиентская логика сохранены целиком. (update: card добавлен для сохранения логики создания margin-top)-->
+          <div hidden class="card">
+            <section class="card">
+              <h2>2a. Доступ к osu! через OAuth</h2>
+              <p class="hint">
+                Бесплатное OAuth-приложение с Client ID и Client Secret — вместо
+                cookie-сессии
+              </p>
+              <form id="oauth-form">
+                <div class="field">
+                  <label for="oauth-client-id">Client ID</label>
+                  <input
+                    id="oauth-client-id"
+                    name="clientId"
+                    type="text"
+                    placeholder="Числовой ID приложения"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                  />
+                </div>
+                <div class="field">
+                  <label for="oauth-client-secret">Client Secret</label>
+                  <input
+                    id="oauth-client-secret"
+                    name="clientSecret"
+                    type="password"
+                    placeholder="Client Secret приложения"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                  />
+                </div>
+                <div class="field-row">
+                  <button id="oauth-save" type="submit">Сохранить</button>
+                  <button
+                    id="oauth-authorize"
+                    type="button"
+                    class="secondary"
+                    disabled
+                  >
+                    Войти через osu!
+                  </button>
+                </div>
+              </form>
+              <div class="session-state">
+                <div class="session-label">
+                  <span id="oauth-dot" class="session-dot"></span
+                  ><span id="oauth-text">OAuth-приложение не настроено</span>
+                </div>
+                <button
+                  id="oauth-disconnect"
+                  class="secondary"
+                  type="button"
+                  hidden
+                >
+                  Отключить
+                </button>
+              </div>
+              <span class="oauth-callback"
+                >Callback URL:
+                <code id="oauth-callback-code"
+                  >http://127.0.0.1:3000/oauth/callback</code
+                ></span
+              >
+              <div
+                id="oauth-status"
+                class="status"
+                role="status"
+                aria-live="polite"
+              ></div>
+              <div class="notice">
+                <strong>Где взять Client ID и Client Secret</strong>
+                <p>
+                  Откройте
+                  <a
+                    href="https://osu.ppy.sh/home/account/edit#new-oauth-application"
+                    target="_blank"
+                    rel="noreferrer"
+                    >настройки аккаунта osu! → раздел OAuth</a
+                  >, создайте приложение и укажите Callback URL, показанный
+                  выше. Затем сохраните данные здесь и нажмите «Войти через
+                  osu!».
+                </p>
+              </div>
+              <p class="small">
+                Client Secret хранится только в памяти приложения и не покидает
+                ваш компьютер.
+              </p>
+            </section>
+          </div>
+
+          <section class="card">
+            <h2>2b. Cookie osu_session — резервный способ</h2>
+            <p class="hint">
+              Нужна, только если зеркала не отдают нужный набор
+            </p>
+            <form id="session-form">
+              <label for="session-cookie"
+                >Cookie <code>osu_session</code></label
+              >
+              <div class="field-row">
+                <input
+                  id="session-cookie"
+                  name="session"
+                  type="password"
+                  placeholder="Вставьте значение cookie osu_session"
+                  autocomplete="off"
+                  spellcheck="false"
+                  required
+                />
+                <button id="session-save" type="submit">Сохранить</button>
+              </div>
+              <p class="small">
+                Хранится только в памяти, пока работает приложение; при
+                перезапуске её нужно ввести снова.
+              </p>
+            </form>
+            <div class="session-state">
+              <div class="session-label">
+                <span id="session-dot" class="session-dot"></span
+                ><span id="session-text">Сессия не добавлена</span>
+              </div>
+              <button id="session-clear" class="secondary" type="button" hidden>
+                Удалить
+              </button>
+            </div>
+            <div class="notice">
+              <strong>Не передавайте cookie никому</strong>
+              <p>
+                Она даёт доступ к аккаунту. Пароль вводить в это приложение не
+                нужно. Cookie отправляется только на osu.ppy.sh, а не на зеркало
+                загрузок.
+              </p>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2>3. Скачивание</h2>
+            <p class="hint">
+              Файлы берутся с зеркал osu! — без cookie и без входа в аккаунт
+            </p>
+            <div
+              class="method-row"
+              role="radiogroup"
+              aria-label="Способ загрузки"
+            >
+              <label class="method-option" id="option-mirror"
+                ><input
+                  type="radio"
+                  name="download-method"
+                  value="mirror"
+                  id="method-mirror"
+                  checked
+                /><span
+                  >Зеркала<small>osu.direct, Hinamizawa, osu!dl</small></span
+                ></label
+              >
+              <label class="method-option" id="option-session"
+                ><input
+                  type="radio"
+                  name="download-method"
+                  value="session"
+                  id="method-session"
+                /><span
+                  >Cookie osu_session<small>резервный способ</small></span
+                ></label
+              >
+              <label class="method-option" id="option-oauth" hidden
+                ><input
+                  type="radio"
+                  name="download-method"
+                  value="oauth"
+                  id="method-oauth"
+                /><span
+                  >OAuth-токен<small>через ваше OAuth-приложение</small></span
+                ></label
+              >
+            </div>
+            <div class="mirror-panel">
+              <div class="mirror-head">Зеркала</div>
+              <div
+                id="mirror-status"
+                class="mirror-status"
+              ></div>
+            </div>
+            <div class="action-row">
+              <button id="download-button" type="button" disabled>
+                Скачать наборы
+              </button>
+              <button id="resume-button" type="button" class="secondary" hidden>
+                Продолжить
+              </button>
+              <button
+                id="cancel-button"
+                type="button"
+                class="secondary danger"
+                hidden
+              >
+                Остановить
+              </button>
+            </div>
+            <div id="progress-wrap" class="progress-wrap">
+              <div class="progress-head">
+                <span id="progress-label">Подготовка…</span
+                ><span id="progress-percent">0%</span>
+              </div>
+              <div
+                id="progress-track"
+                class="progress-track"
+                role="progressbar"
+                aria-label="Прогресс коллекции по наборам"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <div id="progress-bar" class="progress-bar"></div>
+              </div>
+              <div class="transfer-details">
+                <span id="transfer-label">Прогресс текущего набора</span
+                ><span id="transfer-bytes">0 Б</span>
+              </div>
+              <div
+                id="transfer-track"
+                class="transfer-track"
+                role="progressbar"
+                aria-label="Загрузка текущего набора"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <div id="transfer-bar" class="transfer-bar"></div>
+              </div>
+              <div class="stats">
+                <div class="stat">
+                  <b id="downloaded-count">0</b><span>скачано</span>
+                </div>
+                <div class="stat">
+                  <b id="skipped-count">0</b><span>уже было</span>
+                </div>
+                <div class="stat">
+                  <b id="failed-count">0</b><span>ошибок</span>
+                </div>
+              </div>
+              <div
+                id="download-status"
+                class="status"
+                role="status"
+                aria-live="polite"
+              ></div>
+            </div>
+            <div class="notice">
+              <strong>Зеркала — сторонние сервисы</strong>
+              <p>
+                Если набор не нашёлся, приложение само пробует следующее
+                зеркало. Ничего не найдено — переключитесь на cookie
+                <code>osu_session</code>.
+              </p>
+            </div>
+            <div class="notice">
+              <strong>Обратите внимание</strong>
+              <p>
+                Скачивание с сессией аккаунта происходит не через официальный
+                клиент. Массовая автоматическая загрузка в обход osu! может, по
+                правилам сервиса, привести к ограничению аккаунта или IP —
+                используйте её умеренно и на свой риск.
+              </p>
+            </div>
+          </section>
+        </div>
+
+        <aside>
+          <section class="card">
+            <h2>Как это работает</h2>
+            <ol class="steps">
+              <li>
+                <span class="step-no">1</span
+                ><span
+                  ><strong>Вставьте ссылку коллекции</strong><br />Список
+                  наборов берётся из публичного API osu!Collector.</span
+                >
+              </li>
+              <li>
+                <span class="step-no">2</span
+                ><span
+                  ><strong>Скачайте карты</strong><br />Файлы
+                  <code>.osz</code> приходят с зеркал и сохраняются в папку
+                  <code>downloads</code>.</span
+                >
+              </li>
+              <li>
+                <span class="step-no">3</span
+                ><span
+                  ><strong>Если набора нет на зеркалах</strong><br />Добавьте
+                  cookie <code>osu_session</code> — загрузка пойдёт напрямую с
+                  osu!</span
+                >
+              </li>
+            </ol>
+            <div class="notice">
+              <strong>Без входа в аккаунт</strong>
+              <p>
+                По умолчанию ничего вводить не нужно: зеркала отдают готовые
+                наборы анонимно. Cookie остаётся запасным вариантом для редких
+                наборов.
+              </p>
+            </div>
+          </section>
+          <section class="card">
+            <h2>Подсказка</h2>
+            <p class="hint" style="margin: 8px 0 0">Пример ссылки:</p>
+            <p
+              style="margin: 5px 0 0; overflow-wrap: anywhere; font-size: 13px"
+            >
+              <a
+                href="https://osucollector.com/collections/23905/stream-180-189"
+                target="_blank"
+                rel="noreferrer"
+                >osucollector.com/collections/23905/stream-180-189</a
+              >
+            </p>
+            <p class="small">
+              Каждый <code>.osz</code> содержит набор со всеми его сложностями.
+              Повторные скачивания уже имеющихся файлов пропускаются.
+            </p>
+          </section>
+        </aside>
+      </div>
+      <footer>
+        Работает локально на вашем компьютере · Node.js · Без дополнительных
+        пакетов
+      </footer>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
