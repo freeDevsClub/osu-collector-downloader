@@ -218,6 +218,8 @@ function fallbackMapInfo(setIds) {
 }
 
 const PAGINATION_PAGE_LIMIT = 100;
+const MAPSET_FETCH_BUDGET_MS = 40000; // Клиент ждёт 60 с; 40 с дают гарантированный запас на завершение и ответ
+const PAGE_FETCH_TIMEOUT_MS = 10000;
 
 async function fetchMapsetInfo(collectionId, setIds) {
   const infoById = new Map();
@@ -226,21 +228,41 @@ async function fetchMapsetInfo(collectionId, setIds) {
   let cursor = null;
   const cursors = new Set();
   let hasMore = false;
+  const deadline = Date.now() + MAPSET_FETCH_BUDGET_MS;
 
   for (let page = 0; page < PAGINATION_PAGE_LIMIT; page++) {
+    if (Date.now() >= deadline) {
+      log('warn', 'collection.mapinfo.budget_exceeded', { collectionId, page, named: infoById.size, totalWanted: wanted.size });
+      break;
+    }
+    const remainingTime = Math.max(1000, deadline - Date.now());
+    const pageTimeout = Math.min(PAGE_FETCH_TIMEOUT_MS, remainingTime);
+
     const url = new URL(`https://osucollector.com/api/collections/${collectionId}/beatmapsV2`);
     url.searchParams.set('perPage', '100');
     if (cursor !== null) url.searchParams.set('cursor', String(cursor));
-    const response = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-      signal: AbortSignal.timeout(30000),
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        signal: AbortSignal.timeout(pageTimeout),
+      });
+    } catch (pageError) {
+      log('warn', 'collection.mapinfo.page_failed', { collectionId, page, error: safeErrorMessage(pageError) });
+      break;
+    }
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
-      throw new HttpError(502, `osu!Collector beatmapsV2 ответил HTTP ${response.status}.`);
+      log('warn', 'collection.mapinfo.page_bad_status', { collectionId, page, status: response.status });
+      break;
     }
-    const data = await response.json();
-    if (!Array.isArray(data.beatmaps)) throw new HttpError(502, 'osu!Collector вернул неожиданный формат beatmapsV2.');
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      break;
+    }
+    if (!data || !Array.isArray(data.beatmaps)) break;
 
     // O(1) сопоставление по Set, собранному один раз перед циклом
     for (const beatmap of data.beatmaps) {
@@ -258,14 +280,14 @@ async function fetchMapsetInfo(collectionId, setIds) {
     hasMore = Boolean(data.hasMore);
     if (!data.hasMore) break;
     if (data.nextPageCursor == null || cursors.has(data.nextPageCursor)) {
-      throw new HttpError(502, 'osu!Collector вернул некорректный курсор пагинации.');
+      break;
     }
     cursors.add(data.nextPageCursor);
     cursor = data.nextPageCursor;
   }
 
   if (hasMore && infoById.size < wanted.size) {
-    // Сообщаем, что длинная коллекция обрезана по лимиту страниц пагинации
+    // Сообщаем, что длинная коллекция обрезана по лимиту страниц пагинации или бюджету времени
     log('warn', 'collection.mapinfo.truncated', { collectionId, pages: PAGINATION_PAGE_LIMIT, named: infoById.size, totalWanted: setIds.length });
   }
 
@@ -425,10 +447,15 @@ function formatBytes(bytes) {
 function parseRetryAfter(header) {
   if (!header) return null;
   const seconds = Number(header);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, MIRROR_COOLDOWN_MAX_MS);
+  if (Number.isFinite(seconds)) {
+    if (seconds <= 0) return null; // 0 или отрицательное значение не должны давать кулдаун 0 мс (fallback на DEFAULT)
+    return Math.min(seconds * 1000, MIRROR_COOLDOWN_MAX_MS);
+  }
   const date = Date.parse(header);
   if (Number.isNaN(date)) return null;
-  return Math.min(Math.max(0, date - Date.now()), MIRROR_COOLDOWN_MAX_MS);
+  const diff = date - Date.now();
+  if (diff <= 0) return null;
+  return Math.min(diff, MIRROR_COOLDOWN_MAX_MS);
 }
 
 function mirrorCooldownRemaining(mirror) {
@@ -1768,14 +1795,19 @@ process.on('unhandledRejection', reason => {
   log('error', 'process.unhandled_rejection', { error: safeErrorMessage(reason), stack: reason?.stack });
 });
 
+let isShuttingDown = false;
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => {
+  process.on(signal, async () => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
     for (const token of sessions.keys()) sessions.delete(token);
     oauthStates.clear();
     for (const job of jobs.values()) {
       job.abortController?.abort();
       clearAutoResume(job);
     }
+    // Очищаем незавершённые .part-файлы при остановке процесса
+    await cleanupStalePartFiles().catch(() => {});
     server.closeIdleConnections?.();
     server.close(() => process.exit(0));
     // Подстраховка: не зависаем на держащихся соединениях (длительные загрузки, keep-alive).
