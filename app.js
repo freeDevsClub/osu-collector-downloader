@@ -383,6 +383,31 @@ function updateJob(job) {
   byId('downloaded-count').textContent = String(job.downloaded);
   byId('skipped-count').textContent = String(job.skipped);
   byId('failed-count').textContent = String(job.failed);
+  const failedDetails = byId('failed-details');
+  const failedList = byId('failed-list');
+  const failedCountSpan = byId('failed-summary-count');
+  if (failedDetails && failedList && failedCountSpan) {
+    if (Array.isArray(job.errors) && job.errors.length > 0) {
+      failedDetails.hidden = false;
+      failedCountSpan.textContent = String(job.errors.length);
+      failedList.replaceChildren();
+      for (const err of job.errors) {
+        const item = document.createElement('div');
+        item.className = 'failed-item';
+        const title = document.createElement('div');
+        title.className = 'failed-item-title';
+        title.textContent = err.name || `Набор ${err.id}`;
+        const reason = document.createElement('div');
+        reason.className = 'failed-item-reason';
+        reason.textContent = err.error || 'Ошибка загрузки';
+        item.append(title, reason);
+        failedList.append(item);
+      }
+    } else {
+      failedDetails.hidden = true;
+      failedList.replaceChildren();
+    }
+  }
   const tone = job.failed && job.status === 'finished_with_errors' ? 'error' : job.status === 'paused' ? 'warn' : job.status === 'finished' ? 'success' : '';
   const autoResume = job.status === 'paused' && Number.isFinite(job.autoResumeAt)
     ? ` Автовозобновление через ${Math.max(0, Math.ceil((job.autoResumeAt - Date.now()) / 1000))} с.`
@@ -462,6 +487,11 @@ function finishJob(job, errorMessage = '') {
     resumeButton.hidden = true;
     cancelButton.hidden = true;
     persistJobId(null);
+  }
+  if (job && ['finished', 'finished_with_errors'].includes(job.status)) {
+    try {
+      localStorage.setItem('osu-collector-downloader.lastSummary', JSON.stringify(job));
+    } catch {}
   }
   if (errorMessage) setStatus(downloadStatus, errorMessage, 'error');
   else if (job?.status === 'finished') setStatus(downloadStatus, 'Готово! Файлы находятся в папке downloads.', 'success');
@@ -570,8 +600,23 @@ async function restoreJob() {
       persistJobId(null);
     }
   } catch (error) {
-    if (error.status === 404 || /не найден|404/i.test(error.message)) persistJobId(null);
-    else setStatus(downloadStatus, `Сервер помнит незавершённую задачу, но не отвечает: ${error.message}`, 'warn');
+    if (error.status === 404 || /не найден|404/i.test(error.message)) {
+      persistJobId(null);
+      try {
+        const lastRaw = localStorage.getItem('osu-collector-downloader.lastSummary');
+        if (lastRaw) {
+          const lastJob = JSON.parse(lastRaw);
+          if (lastJob && lastJob.id === storedId) {
+            progressWrap.classList.add('visible');
+            updateJob(lastJob);
+            setStatus(downloadStatus, `${lastJob.message || 'Загрузка завершена.'} (сохранено локально)`, lastJob.failed ? 'error' : 'success');
+            return;
+          }
+        }
+      } catch {}
+    } else {
+      setStatus(downloadStatus, `Сервер помнит незавершённую задачу, но не отвечает: ${error.message}`, 'warn');
+    }
   }
 }
 

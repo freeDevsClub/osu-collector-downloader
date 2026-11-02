@@ -495,6 +495,45 @@
       .status.warn {
         color: #ffcf8a;
       }
+      .failed-details {
+        margin-top: 14px;
+        border: 1px solid rgba(255, 146, 154, 0.25);
+        border-radius: 10px;
+        background: rgba(255, 146, 154, 0.06);
+        padding: 10px 14px;
+        font-size: 13px;
+      }
+      .failed-details summary {
+        cursor: pointer;
+        color: var(--red);
+        font-weight: 600;
+        user-select: none;
+      }
+      .failed-list {
+        margin-top: 10px;
+        max-height: 200px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-right: 4px;
+      }
+      .failed-item {
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.25);
+        border-radius: 6px;
+        border-left: 3px solid var(--red);
+      }
+      .failed-item-title {
+        font-weight: 600;
+        color: var(--text);
+      }
+      .failed-item-reason {
+        color: var(--muted);
+        font-size: 12px;
+        word-break: break-word;
+        margin-top: 2px;
+      }
       .stats {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -919,6 +958,10 @@
                 role="status"
                 aria-live="polite"
               ></div>
+              <details id="failed-details" class="failed-details" hidden>
+                <summary id="failed-summary">Ошибки загрузки (<span id="failed-summary-count">0</span>)</summary>
+                <div id="failed-list" class="failed-list"></div>
+              </details>
             </div>
             <div class="notice">
               <strong>Зеркала — сторонние сервисы</strong>

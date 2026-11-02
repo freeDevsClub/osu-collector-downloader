@@ -183,6 +183,7 @@ function safeJobForClient(job) {
     currentPercent: job.currentPercent,
     status: job.status,
     message: job.message,
+    errors: Array.from(job.errorsById?.values() || []).slice(0, 300),
     mirrors: MIRRORS.map(mirror => ({ id: mirror.id, label: mirror.label, cooldownMs: mirrorCooldownRemaining(mirror) })),
   };
 }
@@ -791,6 +792,7 @@ async function downloadSet(setId, auth, job) {
     await fs.promises.rename(tempPath, finalPath);
     job.doneIds.add(setId);
     job.errIds.delete(setId);
+    job.errorsById?.delete(setId);
     job.currentPercent = 100;
     log('info', 'map.download.succeeded', { jobId: job.id, beatmapsetId: setId, sizeBytes: received, expectedBytes, file: path.relative(ROOT, finalPath) });
   } catch (error) {
@@ -957,9 +959,15 @@ async function runJob(job, auth) {
     } catch (error) {
       job.extraFailures += 1;
       job.status = 'finished_with_errors';
-      job.message = safeErrorMessage(error);
+      const errMessage = safeErrorMessage(error);
+      job.message = errMessage;
+      job.errorsById?.set('oauth', {
+        id: 'oauth',
+        name: 'OAuth авторизация',
+        error: errMessage,
+      });
       job.finishedAt = Date.now();
-      log('error', 'download.job.finished', { jobId: job.id, status: job.status, stage: 'oauth_token', error: safeErrorMessage(error) });
+      log('error', 'download.job.finished', { jobId: job.id, status: job.status, stage: 'oauth_token', error: errMessage });
       return;
     }
   }
@@ -984,6 +992,7 @@ async function runJob(job, auth) {
           job.currentPercent = 100;
           job.skipIds.add(setId);
           job.errIds.delete(setId);
+          job.errorsById?.delete(setId);
           log('info', 'map.download.skipped', { jobId: job.id, beatmapsetId: setId, reason: 'file already exists', sizeBytes: existing.size });
           continue;
         } else {
@@ -1019,9 +1028,15 @@ async function runJob(job, auth) {
           log('info', 'download.job.set_deferred', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
         } else {
           job.errIds.add(setId);
-          job.message = `Набор ${setId}: ${safeErrorMessage(error)}`;
+          const errMessage = safeErrorMessage(error);
+          job.message = `Набор ${setId}: ${errMessage}`;
+          job.errorsById?.set(setId, {
+            id: setId,
+            name: job.mapsById.get(setId)?.label || `Набор ${setId}`,
+            error: errMessage,
+          });
           if (error instanceof OAuthDownloadScopeError) stopAfterCurrent = true;
-          log('error', 'map.download.failed', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
+          log('error', 'map.download.failed', { jobId: job.id, beatmapsetId: setId, error: errMessage });
         }
       }
     } finally {
@@ -1061,9 +1076,15 @@ async function runJob(job, auth) {
           } else {
             job.errIds.add(setId);
             deferredSetIds.delete(setId);
-            job.message = `Набор ${setId}: ${safeErrorMessage(error)}`;
+            const errMessage = safeErrorMessage(error);
+            job.message = `Набор ${setId}: ${errMessage}`;
+            job.errorsById?.set(setId, {
+              id: setId,
+              name: job.mapsById.get(setId)?.label || `Набор ${setId}`,
+              error: errMessage,
+            });
             if (error instanceof OAuthDownloadScopeError) { stopAfterCurrent = true; break; }
-            log('error', 'map.download.failed', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
+            log('error', 'map.download.failed', { jobId: job.id, beatmapsetId: setId, error: errMessage });
           }
         }
       } finally {
@@ -1439,6 +1460,7 @@ async function handleApi(req, res, url) {
       doneIds: new Set(),
       skipIds: new Set(),
       errIds: new Set(),
+      errorsById: new Map(),
       extraFailures: 0,
       mapsById: new Map((data.maps || fallbackMapInfo(setIds)).map(map => [map.id, map])),
       currentBytes: 0,
@@ -1593,7 +1615,7 @@ setInterval(() => {
     if (expiresAt <= now) oauthStates.delete(state);
   }
   for (const [id, job] of jobs) {
-    if (!['queued', 'running'].includes(job.status) && now - job.finishedAt > 60 * 60 * 1000) {
+    if (!['queued', 'running', 'paused'].includes(job.status) && now - job.finishedAt > 24 * 60 * 60 * 1000) {
       clearAutoResume(job);
       if (activeJob === job) activeJob = null;
       jobs.delete(id);
