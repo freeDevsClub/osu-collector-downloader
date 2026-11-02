@@ -128,25 +128,23 @@ function renderSessionState(connected) {
   updateDownloadButton();
 }
 
-function renderMapList(setIds, maps) {
+function renderMapList(maps = []) {
   // Список потенциально огромный (5000 выборок) — не рендерим всё за один проход, чтобы не завис браузер.
   // Защита от гонки: если пользователь повторно нажал «Показать карты», старый рендер прерывается.
   const renderId = ++mapListRenderId;
   const list = byId('map-list');
   list.replaceChildren();
-  const mapsById = new Map((maps || []).map(map => [map.id, map]));
   const CHUNK_SIZE = 250;
   let index = 0;
   const renderChunk = () => {
     if (renderId !== mapListRenderId) return;
     const fragment = document.createDocumentFragment();
-    for (const id of setIds.slice(index, index + CHUNK_SIZE)) {
-      const map = mapsById.get(id);
+    for (const map of maps.slice(index, index + CHUNK_SIZE)) {
       const item = document.createElement('span');
       item.className = 'map-id';
       const title = document.createElement('span');
       title.className = 'map-title';
-      title.textContent = map?.label || `Набор ${id}`;
+      title.textContent = map?.label || `Набор ${map?.id ?? ''}`;
       item.append(title);
       if (map?.creator) {
         const artist = document.createElement('span');
@@ -158,7 +156,7 @@ function renderMapList(setIds, maps) {
     }
     index += CHUNK_SIZE;
     list.append(fragment);
-    if (index < setIds.length) {
+    if (index < maps.length) {
       const idle = window.requestIdleCallback || (cb => setTimeout(cb, 0));
       idle(() => {
         if (renderId === mapListRenderId) renderChunk();
@@ -181,7 +179,7 @@ function renderCollection(data) {
     chip.textContent = text;
     byId('collection-meta').append(chip);
   }
-  renderMapList(data.setIds || [], data.maps);
+  renderMapList(data.maps || (data.setIds || []).map(id => ({ id })));
   collectionCard.classList.add('visible');
   updateDownloadButton();
   setStatus(collectionStatus, `Найдено ${data.count} уникальных наборов карт.`, 'success');

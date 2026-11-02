@@ -209,6 +209,7 @@ function anySignal(signals) {
 }
 
 function parseSetIds(data) {
+  if (Array.isArray(data?.setIds)) return data.setIds;
   if (!data || !Array.isArray(data.beatmapsets)) throw new HttpError(502, 'osu!Collector вернул неожиданный формат коллекции.');
   return [...new Set(data.beatmapsets.map(set => set && set.id).filter(id => Number.isSafeInteger(id) && id > 0))];
 }
@@ -217,9 +218,10 @@ function fallbackMapInfo(setIds) {
   return setIds.map(id => ({ id, label: `Набор ${id}`, title: null, artist: null, creator: null }));
 }
 
-const PAGINATION_PAGE_LIMIT = 100;
+const PAGINATION_PAGE_LIMIT = 300; // До 30 000 карт — покрывает типичные коллекции из 5000 наборов (~20-30k карт)
+const PAGINATION_DELAY_MS = 50; // Пауза между запросами к чужому API для предотвращения 429 и всплесков нагрузки
 const MAPSET_FETCH_BUDGET_MS = 40000; // Клиент ждёт 60 с; 40 с дают гарантированный запас на завершение и ответ
-const PAGE_FETCH_TIMEOUT_MS = 10000;
+const PAGE_FETCH_TIMEOUT_MS = 8000;
 
 async function fetchMapsetInfo(collectionId, setIds) {
   const infoById = new Map();
@@ -234,6 +236,9 @@ async function fetchMapsetInfo(collectionId, setIds) {
     if (Date.now() >= deadline) {
       log('warn', 'collection.mapinfo.budget_exceeded', { collectionId, page, named: infoById.size, totalWanted: wanted.size });
       break;
+    }
+    if (page > 0 && PAGINATION_DELAY_MS > 0) {
+      await sleep(PAGINATION_DELAY_MS);
     }
     const remainingTime = Math.max(1000, deadline - Date.now());
     const pageTimeout = Math.min(PAGE_FETCH_TIMEOUT_MS, remainingTime);
@@ -294,34 +299,35 @@ async function fetchMapsetInfo(collectionId, setIds) {
   return setIds.map(id => infoById.get(id) || fallbackMapInfo([id])[0]);
 }
 
-// Короткий кеш коллекций (10 минут) с ограничением размера и защитой от сохранения деградированных данных.
+// Кеш нормализованных снимков коллекций с LRU-вытеснением.
 const collectionCache = new Map();
 const inFlightCollections = new Map();
 const COLLECTION_CACHE_TTL_MS = 10 * 60 * 1000;
+const COLLECTION_CACHE_DEGRADED_TTL_MS = 2 * 60 * 1000;
 const MAX_COLLECTION_CACHE_ENTRIES = 20;
 
 function pruneCollectionCache() {
   const now = Date.now();
   for (const [id, entry] of collectionCache) {
-    if (now - entry.fetchedAt > COLLECTION_CACHE_TTL_MS) {
+    if (now - entry.fetchedAt > (entry.ttl || COLLECTION_CACHE_TTL_MS)) {
       collectionCache.delete(id);
     }
   }
 }
 
-function setCollectionCache(collectionId, data) {
+function setCollectionCache(collectionId, data, ttl = COLLECTION_CACHE_TTL_MS) {
   pruneCollectionCache();
   while (collectionCache.size >= MAX_COLLECTION_CACHE_ENTRIES) {
     const oldestKey = collectionCache.keys().next().value;
     if (oldestKey === undefined) break;
     collectionCache.delete(oldestKey);
   }
-  collectionCache.set(collectionId, { data, fetchedAt: Date.now() });
+  collectionCache.set(collectionId, { data, fetchedAt: Date.now(), ttl });
 }
 
 async function fetchCollection(collectionId) {
   const cached = collectionCache.get(collectionId);
-  if (cached && Date.now() - cached.fetchedAt < COLLECTION_CACHE_TTL_MS) {
+  if (cached && Date.now() - cached.fetchedAt < (cached.ttl || COLLECTION_CACHE_TTL_MS)) {
     // Обновляем порядок использования в LRU-кеше
     collectionCache.delete(collectionId);
     collectionCache.set(collectionId, cached);
@@ -347,29 +353,43 @@ async function fetchCollection(collectionId) {
         await response.body?.cancel().catch(() => {});
         throw new HttpError(response.status === 404 ? 404 : 502, `osu!Collector ответил HTTP ${response.status}.`);
       }
-      const data = await response.json();
-      const setIds = parseSetIds(data);
-      if (Array.isArray(data.beatmapsets) && setIds.length < data.beatmapsets.length) {
-        log('info', 'collection.mapinfo.deduplicated', { collectionId, totalInCollection: data.beatmapsets.length, uniqueSets: setIds.length });
-      } else if (typeof data.beatmapCount === 'number' && data.beatmapCount > 0 && setIds.length === 0) {
-        log('warn', 'collection.mapinfo.empty', { collectionId, beatmapCount: data.beatmapCount });
+      const rawData = await response.json();
+      const setIds = parseSetIds(rawData);
+      if (Array.isArray(rawData.beatmapsets) && setIds.length < rawData.beatmapsets.length) {
+        log('info', 'collection.mapinfo.deduplicated', { collectionId, totalInCollection: rawData.beatmapsets.length, uniqueSets: setIds.length });
+      } else if (typeof rawData.beatmapCount === 'number' && rawData.beatmapCount > 0 && setIds.length === 0) {
+        log('warn', 'collection.mapinfo.empty', { collectionId, beatmapCount: rawData.beatmapCount });
       }
 
+      let maps;
       let namesFetched = false;
       try {
-        data.maps = await fetchMapsetInfo(collectionId, setIds);
+        maps = await fetchMapsetInfo(collectionId, setIds);
         namesFetched = true;
       } catch (error) {
         log('warn', 'collection.map_names.unavailable', { collectionId, error: safeErrorMessage(error) });
-        data.maps = fallbackMapInfo(setIds);
+        maps = fallbackMapInfo(setIds);
       }
 
-      log('info', 'collection.fetch.succeeded', { collectionId, setCount: setIds.length, namedSetCount: data.maps.filter(map => map.title || map.artist).length, durationMs: Date.now() - startedAt });
-      // Сохраняем в кеш только полноценные данные с названиями, чтобы не блокировать получение названий при временных сбоях
-      if (namesFetched) {
-        setCollectionCache(collectionId, data);
-      }
-      return data;
+      log('info', 'collection.fetch.succeeded', { collectionId, setCount: setIds.length, namedSetCount: maps.filter(map => map.title || map.artist).length, durationMs: Date.now() - startedAt });
+
+      // Формируем компактный нормализованный снимок коллекции вместо хранения сырого JSON
+      const collectionSnapshot = {
+        id: rawData.id,
+        name: typeof rawData.name === 'string' ? rawData.name : `Коллекция ${collectionId}`,
+        uploader: rawData.uploader && typeof rawData.uploader.username === 'string' ? rawData.uploader.username : null,
+        count: setIds.length,
+        beatmapCount: rawData.beatmapCount ?? setIds.length,
+        maps,
+        setIds,
+        namesFetched,
+      };
+
+      // Кешируем снимок: при полноценных названиях — на 10 минут, при сбое названий — на 2 минуты,
+      // чтобы последующий запуск задачи через POST /api/downloads использовал в точности тот же снимок
+      // без повторного запроса к osu!Collector и без расхождения в составе карт.
+      setCollectionCache(collectionId, collectionSnapshot, namesFetched ? COLLECTION_CACHE_TTL_MS : COLLECTION_CACHE_DEGRADED_TTL_MS);
+      return collectionSnapshot;
     } catch (error) {
       log('error', 'collection.fetch.failed', { collectionId, durationMs: Date.now() - startedAt, error: safeErrorMessage(error) });
       throw error;
@@ -1526,15 +1546,14 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const collectionId = extractCollectionId(body?.url);
     const data = await fetchCollection(collectionId);
-    const setIds = parseSetIds(data);
     return json(res, 200, {
       id: data.id,
-      name: typeof data.name === 'string' ? data.name : `Коллекция ${collectionId}`,
-      uploader: data.uploader && typeof data.uploader.username === 'string' ? data.uploader.username : null,
-      count: setIds.length,
-      beatmapCount: data.beatmapCount ?? setIds.length,
-      maps: data.maps || fallbackMapInfo(setIds),
-      setIds,
+      name: data.name,
+      uploader: data.uploader,
+      count: data.count,
+      beatmapCount: data.beatmapCount,
+      maps: data.maps,
+      setIds: data.setIds,
     });
   }
   if (req.method === 'POST' && url.pathname === '/api/downloads') {
