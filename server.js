@@ -873,18 +873,66 @@ async function downloadFromMirrors(setId, job) {
     if (job.status === 'cancelled') return;
   }
 
-  const cooldowns = MIRRORS.map(mirrorCooldownRemaining).filter(ms => ms > 0);
-  const cooledOut = cooldowns.length > 0;
+  let cooldowns = MIRRORS.map(mirrorCooldownRemaining).filter(ms => ms > 0);
+
+  // Если ВСЕ зеркала сейчас на кулдауне — ждём освобождения ближайшего (до MIRROR_COOLDOWN_WAIT_MAX_MS) и повторяем
+  if (cooldowns.length === MIRRORS.length) {
+    const waitMs = Math.min(...cooldowns);
+    if (waitMs > 0 && waitMs <= MIRROR_COOLDOWN_WAIT_MAX_MS) {
+      log('info', 'map.download.all_mirrors_cooldown.wait', { jobId: job.id, beatmapsetId: setId, waitMs });
+      job.message = `Все зеркала на паузе — жду ${Math.ceil(waitMs / 1000)} с…`;
+      await sleep(waitMs + 500);
+      if (job.status === 'cancelled') return;
+      for (const mirror of MIRRORS) {
+        if (job.status === 'cancelled') return;
+        if (missingMirrors.has(mirror.id)) continue;
+        if (mirrorCooldownRemaining(mirror) > 0) continue;
+        job.currentMirror = mirror.label;
+        job.currentBytes = 0;
+        job.currentTotalBytes = null;
+        job.currentPercent = 0;
+        try {
+          await downloadSet(setId, { kind: 'mirror', mirror }, job);
+          return;
+        } catch (error) {
+          job.currentBytes = 0;
+          job.currentTotalBytes = null;
+          job.currentPercent = 0;
+          if (job.status === 'cancelled') return;
+          if (error instanceof MirrorRateLimitError) {
+            mirrorCooldowns.set(mirror.id, Date.now() + error.retryAfterMs);
+            continue;
+          }
+          if (error.isMissing) {
+            missingMirrors.add(mirror.id);
+          }
+          failures.set(mirror.id, `${mirror.label}: ${safeErrorMessage(error).slice(0, 240)}`);
+        }
+      }
+    }
+  }
+
+  cooldowns = MIRRORS.map(mirrorCooldownRemaining).filter(ms => ms > 0);
+  const allCooldown = cooldowns.length === MIRRORS.length;
   const allMissing = missingMirrors.size === MIRRORS.length;
-  if (cooledOut && !allMissing) {
-    // хотя бы часть зеркал остывает — не считаем окончательным провалом набора
-    const error = new Error(`зеркало(а) остывают/отдают 429 — набор отложен: ${[...failures.values()].filter(Boolean).join('; ') || 'зеркала остывали'}`);
+
+  if (allCooldown) {
+    const error = new Error('Все зеркала временно ограничили загрузки (HTTP 429).');
+    error.allCooldown = true;
     error.retryLater = true;
+    throw error;
+  }
+
+  if (cooldowns.length > 0 && !allMissing) {
+    // Часть зеркал остывает — откладываем этот набор в конец очереди, не блокируя остальные наборы
+    const error = new Error(`зеркало(а) остывают/отдают 429 — набор отложен: ${[...failures.values()].filter(Boolean).join('; ') || 'зеркала остывали'}`);
+    error.deferSet = true;
     throw error;
   }
   const detail = [...failures.values()].filter(Boolean).join('; ');
   if (!detail) {
     const error = new Error('ни одно зеркало не ответило (все на cooldown) — набор отложен');
+    error.allCooldown = true;
     error.retryLater = true;
     throw error;
   }
@@ -915,6 +963,7 @@ async function runJob(job, auth) {
   let lastRequest = 0;
   let stopAfterCurrent = false;
   let stopForCooldown = false;
+  const deferredSetIds = new Set();
   for (const setId of job.setIds) {
     if (job.status === 'cancelled') break;
     if (job.doneIds.has(setId) || job.skipIds.has(setId)) continue; // уже учтён, не дублируем
@@ -953,10 +1002,14 @@ async function runJob(job, auth) {
       else await downloadSet(setId, auth, job);
     } catch (error) {
       if (job.status !== 'cancelled') {
-        if (error.retryLater) {
-          job.message = `Набор ${setId}: зеркала временно ограничили загрузки (HTTP 429). Загрузка приостановлена — повторите позже, готовые файлы будут пропущены.`;
+        if (error.allCooldown) {
+          job.message = `Все зеркала временно ограничили загрузки (HTTP 429). Загрузка приостановлена — повторите позже, готовые файлы будут пропущены.`;
           stopForCooldown = true;
-          log('warn', 'download.job.deferred', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
+          log('warn', 'download.job.all_cooldown', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
+        } else if (error.deferSet) {
+          deferredSetIds.add(setId);
+          job.message = `Набор ${setId}: часть зеркал остывает — откладываю набор в конец очереди.`;
+          log('info', 'download.job.set_deferred', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
         } else {
           job.errIds.add(setId);
           job.message = `Набор ${setId}: ${safeErrorMessage(error)}`;
@@ -970,6 +1023,48 @@ async function runJob(job, auth) {
     lastRequest = Date.now();
     if (job.status === 'cancelled') break;
     if (stopAfterCurrent || stopForCooldown) break;
+  }
+
+  // Второй проход: пробуем заново наборы, которые были отложены из-за остывания зеркал
+  if (job.status !== 'cancelled' && !stopAfterCurrent && !stopForCooldown && deferredSetIds.size > 0) {
+    log('info', 'download.job.retry_deferred_started', { jobId: job.id, count: deferredSetIds.size });
+    for (const setId of deferredSetIds) {
+      if (job.status === 'cancelled') break;
+      if (job.doneIds.has(setId) || job.skipIds.has(setId)) continue;
+      const delay = DOWNLOAD_DELAY_MS - (Date.now() - lastRequest);
+      if (lastRequest && delay > 0) await sleep(delay);
+      if (job.status === 'cancelled') break;
+      job.currentSetId = setId;
+      job.currentBytes = 0;
+      job.currentTotalBytes = null;
+      job.currentPercent = 0;
+      job.abortController = new AbortController();
+      try {
+        if (auth.kind === 'oauth') auth.token = await ensureOsuToken();
+        if (auth.kind === 'mirror') await downloadFromMirrors(setId, job);
+        else await downloadSet(setId, auth, job);
+        deferredSetIds.delete(setId);
+      } catch (error) {
+        if (job.status !== 'cancelled') {
+          if (error.allCooldown || error.deferSet) {
+            job.message = `Набор ${setId}: зеркала остывают — загрузка приостановлена.`;
+            stopForCooldown = true;
+            log('warn', 'download.job.deferred_final_pause', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
+            break;
+          } else {
+            job.errIds.add(setId);
+            deferredSetIds.delete(setId);
+            job.message = `Набор ${setId}: ${safeErrorMessage(error)}`;
+            if (error instanceof OAuthDownloadScopeError) { stopAfterCurrent = true; break; }
+            log('error', 'map.download.failed', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
+          }
+        }
+      } finally {
+        job.abortController = null;
+      }
+      lastRequest = Date.now();
+      if (stopAfterCurrent || stopForCooldown) break;
+    }
   }
   const counters = jobCounters(job);
   if (job.status !== 'cancelled') {
