@@ -255,8 +255,6 @@ downloadButton.addEventListener('click', async () => {
     return;
   }
   downloadButton.disabled = true;
-  pausedJob = null;
-  resumeButton.hidden = true;
   setStatus(downloadStatus, 'Создаю задачу загрузки…');
   progressWrap.classList.add('visible');
   try {
@@ -266,6 +264,8 @@ downloadButton.addEventListener('click', async () => {
       // Создание задачи запрашивает коллекцию у osu!Collector — даём больше 20 секунд по умолчанию.
       timeoutMs: 60000,
     });
+    pausedJob = null;
+    resumeButton.hidden = true;
     startJobPolling(job.id);
     updateJob(job);
     void loadMirrors();
@@ -276,6 +276,10 @@ downloadButton.addEventListener('click', async () => {
       return;
     }
     setStatus(downloadStatus, error.message, 'error');
+    if (pausedJob) {
+      resumeButton.hidden = false;
+      cancelButton.hidden = false;
+    }
     if (method === 'oauth') {
       try { await loadOauthStatus(); } catch {}
     }
@@ -447,15 +451,16 @@ function hasActiveCooldowns() {
 function finishJob(job, errorMessage = '') {
   stopPolling();
   activeJob = null;
-  cancelButton.hidden = true;
   const canResume = (job?.status === 'paused' || (job?.status === 'finished_with_errors' && (job.deferred || 0) > 0)) && !errorMessage && !Number.isFinite(job.autoResumeAt);
   if (canResume) {
     pausedJob = job.id;
     resumeButton.hidden = false;
+    cancelButton.hidden = false;
     persistJobId(job.id);
   } else {
     pausedJob = null;
     resumeButton.hidden = true;
+    cancelButton.hidden = true;
     persistJobId(null);
   }
   if (errorMessage) setStatus(downloadStatus, errorMessage, 'error');
@@ -482,10 +487,11 @@ resumeButton.addEventListener('click', async () => {
   }
 });
 cancelButton.addEventListener('click', async () => {
-  if (!activeJob) return;
+  const targetId = activeJob || pausedJob;
+  if (!targetId) return;
   cancelButton.disabled = true;
   try {
-    const job = await api(`/api/downloads/${activeJob}/cancel`, { method: 'POST', body: '{}' });
+    const job = await api(`/api/downloads/${targetId}/cancel`, { method: 'POST', body: '{}' });
     finishJob(job);
   } catch (error) {
     notify(error.message);

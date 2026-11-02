@@ -1303,21 +1303,35 @@ async function handleApi(req, res, url) {
       }
       auth = { kind: 'session', session };
     }
-    if (activeJob && ['queued', 'running', 'paused'].includes(activeJob.status)) {
-      return json(res, 409, { error: 'Уже идёт (или на паузе) другая загрузка — дождитесь её или нажмите «Остановить».' });
+    if (activeJob && ['queued', 'running'].includes(activeJob.status)) {
+      return json(res, 409, { error: 'Уже идёт другая загрузка — дождитесь её или нажмите «Остановить».' });
     }
     const body = await readJson(req);
     const collectionId = extractCollectionId(body?.url);
+    if (activeJob && activeJob.status === 'paused') {
+      if (activeJob.collectionId === collectionId) {
+        activeJob.autoResumeCount = 0;
+        resumeJob(activeJob, auth, 'manual');
+        return json(res, 202, safeJobForClient(activeJob));
+      }
+      return json(res, 409, { error: `Уже на паузе загрузка другой коллекции («${activeJob.collectionName}») — нажмите «Остановить», чтобы начать новую.` });
+    }
     const data = await fetchCollection(collectionId);
     const setIds = parseSetIds(data);
     if (!setIds.length) return json(res, 400, { error: 'В коллекции нет доступных наборов.' });
     // Одна активная задача на процесс: повторная проверка после асинхронного fetchCollection
     if (activeJob && ['queued', 'running', 'paused'].includes(activeJob.status)) {
+      if (activeJob.status === 'paused' && activeJob.collectionId === collectionId) {
+        activeJob.autoResumeCount = 0;
+        resumeJob(activeJob, auth, 'manual');
+        return json(res, 202, safeJobForClient(activeJob));
+      }
       return json(res, 409, { error: 'Уже идёт (или на паузе) другая загрузка — дождитесь её или нажмите «Остановить».' });
     }
     const job = {
       id: crypto.randomBytes(16).toString('hex'),
       method,
+      collectionId,
       collectionName: typeof data.name === 'string' ? data.name : `Коллекция ${collectionId}`,
       setIds,
       doneIds: new Set(),
