@@ -121,8 +121,9 @@ describe('Интеграционные тесты fallback между зерка
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not Found');
     });
-    await new Promise(r => s404.listen(0, '127.0.0.1', r));
-    const port404 = s404.address().port;
+    await new Promise(r => s404.listen(0, '127.0.0.1', () => r(null)));
+    const addr = /** @type {import('node:net').AddressInfo} */ (s404.address());
+    const port404 = addr.port;
 
     MIRRORS.length = 0;
     MIRRORS.push(
@@ -168,7 +169,8 @@ describe('Интеграционные тесты fallback между зерка
     await assert.rejects(
       async () => { await downloadFromMirrors(99903, job); },
       (err) => {
-        assert.ok(err.allCooldown === true, 'Ошибка должна содержать allCooldown: true');
+        const e = /** @type {any} */ (err);
+        assert.ok(e.allCooldown === true, 'Ошибка должна содержать allCooldown: true');
         return true;
       }
     );

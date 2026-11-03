@@ -1,5 +1,18 @@
+// @ts-check
 "use strict";
+
+/**
+ * @param {string} id
+ * @returns {any}
+ */
 const byId = id => document.getElementById(id);
+
+/**
+ * @param {unknown} err
+ * @returns {any}
+ */
+const toAny = err => /** @type {any} */ (err);
+
 const collectionForm = byId('collection-form');
 const sessionForm = byId('session-form');
 const oauthForm = byId('oauth-form');
@@ -19,7 +32,8 @@ const progressTrack = byId('progress-track');
 const transferBar = byId('transfer-bar');
 const transferTrack = byId('transfer-track');
 const sessionInput = byId('session-cookie');
-const methodInputs = [...document.querySelectorAll('input[name="download-method"]')];
+/** @type {HTMLInputElement[]} */
+const methodInputs = /** @type {any} */ ([...document.querySelectorAll('input[name="download-method"]')]);
 const JOB_STORAGE_KEY = 'osu-collector-downloader.jobId';
 const POLL_INTERVAL_MS = 1300;
 const POLL_MAX_FAILURES = 3;
@@ -33,7 +47,7 @@ let pollTimer = null;
 let pollInFlight = false;
 let pollFailures = 0;
 let sessionConnected = false;
-let oauthState = { configured: false, connected: false, callbackUrl: '' };
+let oauthState = { enabled: true, configured: false, connected: false, callbackUrl: '' };
 let mirrorStatus = [];
 
 function setStatus(element, text = '', tone = '') {
@@ -41,12 +55,14 @@ function setStatus(element, text = '', tone = '') {
   element.className = `status${tone ? ` ${tone}` : ''}`;
 }
 
+let notifyTimer = null;
 function notify(text) {
   const toast = byId('toast');
+  if (!toast) return;
   toast.textContent = text;
   toast.classList.add('show');
-  clearTimeout(notify.timer);
-  notify.timer = setTimeout(() => toast.classList.remove('show'), 3200);
+  clearTimeout(notifyTimer);
+  notifyTimer = setTimeout(() => toast.classList.remove('show'), 3200);
 }
 
 async function api(url, options = {}) {
@@ -60,7 +76,7 @@ async function api(url, options = {}) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const err = new Error(data.error || `Ошибка запроса (${response.status})`);
+    const err = /** @type {any} */ (new Error(data.error || `Ошибка запроса (${response.status})`));
     err.status = response.status;
     throw err;
   }
@@ -208,7 +224,8 @@ collectionForm.addEventListener('submit', async event => {
       timeoutMs: 60000,
     });
     renderCollection(data);
-  } catch (error) {
+  } catch (rawError) {
+    const error = toAny(rawError);
     if (error.name === 'TimeoutError') {
       setStatus(collectionStatus, 'Время ожидания ответа истекло. Возможно, коллекция слишком большая или сервер osu!Collector перегружен.', 'error');
     } else {
@@ -231,8 +248,8 @@ sessionForm.addEventListener('submit', async event => {
     sessionInput.value = '';
     renderSessionState(true);
     notify('Сессия сохранена только в памяти приложения.');
-  } catch (error) {
-    notify(error.message);
+  } catch (rawError) {
+    notify(toAny(rawError).message);
   } finally {
     button.disabled = false;
   }
@@ -242,8 +259,8 @@ byId('session-clear').addEventListener('click', async () => {
     await api('/api/session', { method: 'DELETE' });
     renderSessionState(false);
     notify('Сессия удалена.');
-  } catch (error) {
-    notify(error.message);
+  } catch (rawError) {
+    notify(toAny(rawError).message);
   }
 });
 
@@ -275,7 +292,8 @@ downloadButton.addEventListener('click', async () => {
     startJobPolling(job.id);
     updateJob(job);
     void loadMirrors();
-  } catch (error) {
+  } catch (rawError) {
+    const error = toAny(rawError);
     if (error.name === 'TimeoutError') {
       setStatus(downloadStatus, 'Локальный сервер не ответил вовремя — задача могла создаться; обновите страницу, чтобы вернуться к ней.', 'warn');
       downloadButton.disabled = false;
@@ -344,7 +362,8 @@ async function pollJob() {
     } else {
       finishJob(job);
     }
-  } catch (error) {
+  } catch (rawError) {
+    const error = toAny(rawError);
     if (error.status === 404 || /не найден/i.test(error.message)) {
       persistJobId(null);
       finishJob(null, 'Загрузка не найдена на сервере.');
@@ -515,8 +534,8 @@ resumeButton.addEventListener('click', async () => {
     startJobPolling(job.id);
     updateJob(job);
     void loadMirrors();
-  } catch (error) {
-    setStatus(downloadStatus, error.message, 'warn');
+  } catch (rawError) {
+    setStatus(downloadStatus, toAny(rawError).message, 'warn');
     void loadMirrors();
   } finally {
     resumeButton.disabled = false;
@@ -529,8 +548,8 @@ cancelButton.addEventListener('click', async () => {
   try {
     const job = await api(`/api/downloads/${targetId}/cancel`, { method: 'POST', body: '{}' });
     finishJob(job);
-  } catch (error) {
-    notify(error.message);
+  } catch (rawError) {
+    notify(toAny(rawError).message);
   } finally {
     cancelButton.disabled = false;
   }
@@ -559,8 +578,8 @@ oauthForm.addEventListener('submit', async event => {
     renderOauthStatus(status);
     setStatus(byId('oauth-status'), 'Приложение сохранено. Теперь войдите через osu!.', 'success');
     notify('OAuth-приложение сохранено только в памяти приложения.');
-  } catch (error) {
-    setStatus(byId('oauth-status'), error.message, 'error');
+  } catch (rawError) {
+    setStatus(byId('oauth-status'), toAny(rawError).message, 'error');
   } finally {
     button.disabled = false;
     button.textContent = 'Сохранить';
@@ -573,8 +592,8 @@ byId('oauth-authorize').addEventListener('click', async () => {
   try {
     const { authorizeUrl } = await api('/api/oauth/start', { method: 'POST', body: '{}' });
     window.location.assign(authorizeUrl);
-  } catch (error) {
-    setStatus(byId('oauth-status'), error.message, 'error');
+  } catch (rawError) {
+    setStatus(byId('oauth-status'), toAny(rawError).message, 'error');
     button.disabled = false;
   }
 });
@@ -585,8 +604,8 @@ byId('oauth-disconnect').addEventListener('click', async () => {
     renderOauthStatus(status);
     setStatus(byId('oauth-status'), 'Токен отозван локально.', '');
     notify('Доступ OAuth отключён.');
-  } catch (error) {
-    notify(error.message);
+  } catch (rawError) {
+    notify(toAny(rawError).message);
   }
 });
 
@@ -605,7 +624,8 @@ async function restoreJob() {
     } else {
       persistJobId(null);
     }
-  } catch (error) {
+  } catch (rawError) {
+    const error = toAny(rawError);
     if (error.status === 404 || /не найден|404/i.test(error.message)) {
       persistJobId(null);
       try {

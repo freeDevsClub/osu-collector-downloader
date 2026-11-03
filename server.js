@@ -1,5 +1,71 @@
 
+// @ts-check
 "use strict";
+
+/**
+ * @typedef {'queued' | 'running' | 'paused' | 'finished' | 'finished_with_errors' | 'cancelled'} JobStatus
+ *
+ * @typedef {Object} BeatmapSet
+ * @property {number} id
+ * @property {string} [title]
+ * @property {string} [artist]
+ * @property {string} [creator]
+ * @property {string} [label]
+ * @property {Object} [covers]
+ * @property {string} [covers.cover]
+ * @property {string} [covers.card]
+ * @property {string} [covers.list]
+ *
+ * @typedef {Object} Mirror
+ * @property {string} id
+ * @property {string} label
+ * @property {(id: number | string) => string} build
+ *
+ * @typedef {Object} JobCounters
+ * @property {number} total
+ * @property {number} done
+ * @property {number} skip
+ * @property {number} error
+ * @property {number} percent
+ *
+ * @typedef {Object} Job
+ * @property {string} id
+ * @property {JobStatus} status
+ * @property {string | null} [error]
+ * @property {string} [message]
+ * @property {number} collectionId
+ * @property {string} collectionName
+ * @property {number} total
+ * @property {Set<number>} doneIds
+ * @property {Set<number>} skipIds
+ * @property {Set<number>} errIds
+ * @property {Map<number | string, Object>} errorsById
+ * @property {Map<number, any>} mapsById
+ * @property {number | null} [currentSetId]
+ * @property {number | null} [currentBeatmapsetId]
+ * @property {string | null} [currentMirror]
+ * @property {number} [currentBytes]
+ * @property {number | null} [currentTotalBytes]
+ * @property {number} [currentPercent]
+ * @property {AbortController | null} [abortController]
+ * @property {NodeJS.Timeout | null} [autoResumeTimer]
+ * @property {number} [autoResumeAttempt]
+ * @property {number | null} [autoResumeAt]
+ * @property {number} [pausedAt]
+ * @property {number} [finishedAt]
+ * @property {string} createdAt
+ * @property {string} updatedAt
+ *
+ * @typedef {Object} AuthContext
+ * @property {string | null} [token]
+ * @property {string | null} [cookie]
+ * @property {'oauth' | 'cookie' | 'mirror' | 'guest'} kind
+ * @property {Mirror} [mirror]
+ *
+ * @typedef {Object} OauthState
+ * @property {string} nonce
+ * @property {number} expiresAt
+ */
 
 const http = require('node:http');
 const fs = require('node:fs');
@@ -92,13 +158,27 @@ function log(level, event, details = {}) {
 
 // Ошибка, у которой известен HTTP-статус ответа клиенту (413, 502 …).
 class HttpError extends Error {
+  /**
+   * @param {number} status
+   * @param {string} message
+   */
   constructor(status, message) {
     super(message);
+    /** @type {number} */
     this.httpStatus = status;
+    /** @type {number} */
     this.status = status;
+    /** @type {number | undefined} */
+    this.upstreamStatus = undefined;
+    /** @type {string | null | undefined} */
+    this.oauthError = undefined;
   }
 }
 
+/**
+ * @param {any} error
+ * @returns {string}
+ */
 function safeErrorMessage(error) {
   let message = String(error?.message || error || 'Unknown error').replace(/[\r\n\t]/g, ' ');
   if (oauthConfig.clientSecret) message = message.split(oauthConfig.clientSecret).join('[redacted]');
@@ -746,7 +826,8 @@ async function cleanupJobPartFiles(job) {
       }
     }
   } catch (error) {
-    if (error?.code !== 'ENOENT') log('warn', 'downloads.part_cleanup.failed', { jobId: job.id, error: safeErrorMessage(error) });
+    const err = /** @type {any} */ (error);
+    if (err?.code !== 'ENOENT') log('warn', 'downloads.part_cleanup.failed', { jobId: job.id, error: safeErrorMessage(error) });
   }
 }
 
@@ -762,7 +843,8 @@ async function cleanupStalePartFiles() {
       }
     }
   } catch (error) {
-    if (error?.code !== 'ENOENT') log('warn', 'downloads.part_cleanup.failed', { error: safeErrorMessage(error) });
+    const err = /** @type {any} */ (error);
+    if (err?.code !== 'ENOENT') log('warn', 'downloads.part_cleanup.failed', { error: safeErrorMessage(error) });
   }
 }
 
@@ -884,14 +966,15 @@ async function streamBodyToFile(reader, firstChunk, tempPath, job, expectedBytes
   try {
     handle = await fs.promises.open(tempPath, 'wx+');
   } catch (error) {
-    if (error?.code === 'ENOENT') {
+    const err = /** @type {any} */ (error);
+    if (err?.code === 'ENOENT') {
       await fs.promises.mkdir(path.dirname(tempPath), { recursive: true });
       try {
         handle = await fs.promises.open(tempPath, 'wx+');
       } catch (retryError) {
         throw new HttpError(500, `Не удалось создать временный файл: ${safeErrorMessage(retryError)}`);
       }
-    } else if (error?.code === 'EEXIST') {
+    } else if (err?.code === 'EEXIST') {
       throw new Error('Временный файл уже существует.');
     } else {
       throw error;
@@ -956,7 +1039,7 @@ async function downloadSet(setId, auth, job) {
       });
     } catch (error) {
       if (connect.signal.aborted) {
-        const timeoutError = new Error(`Соединение не установлено за ${Math.round(CONNECT_TIMEOUT_MS / 1000)} с.`);
+        const timeoutError = /** @type {any} */ (new Error(`Соединение не установлено за ${Math.round(CONNECT_TIMEOUT_MS / 1000)} с.`));
         timeoutError.code = 'ETIMEDOUT';
         throw timeoutError;
       }
@@ -995,7 +1078,7 @@ async function downloadSet(setId, auth, job) {
         throw new MirrorTransientError(auth.mirror, `HTTP ${response.status} от ${auth.mirror.label}.`);
       }
       const missing = response.status === 404 || response.status === 410;
-      const error = new Error(`HTTP ${response.status} от ${auth.mirror.label}${missing ? ' (набора там нет)' : ''}. ${detail}`.trim());
+      const error = /** @type {any} */ (new Error(`HTTP ${response.status} от ${auth.mirror.label}${missing ? ' (набора там нет)' : ''}. ${detail}`.trim()));
       if (missing) error.isMissing = true; // окончательный «нет на зеркале», не транзиентный сбой
       throw error;
     }
@@ -1095,7 +1178,7 @@ async function downloadFromMirrors(setId, job) {
           log('warn', 'map.download.mirror.cooldown', { jobId: job.id, beatmapsetId: setId, mirror: mirror.id, cooldownMs: error.retryAfterMs });
           continue;
         }
-        if (error.isMissing) {
+        if (/** @type {any} */ (error).isMissing) {
           missingMirrors.add(mirror.id);
           failures.set(mirror.id, `${mirror.label}: ${safeErrorMessage(error).slice(0, 240)}`);
           log('debug', 'map.download.mirror.missing', { jobId: job.id, beatmapsetId: setId, mirror: mirror.id, error: safeErrorMessage(error) });
@@ -1161,7 +1244,7 @@ async function downloadFromMirrors(setId, job) {
             mirrorCooldowns.set(mirror.id, Date.now() + error.retryAfterMs);
             continue;
           }
-          if (error.isMissing) {
+          if (/** @type {any} */ (error).isMissing) {
             missingMirrors.add(mirror.id);
           }
           failures.set(mirror.id, `${mirror.label}: ${safeErrorMessage(error).slice(0, 240)}`);
@@ -1175,7 +1258,7 @@ async function downloadFromMirrors(setId, job) {
   const allMissing = missingMirrors.size === MIRRORS.length;
 
   if (allCooldown) {
-    const error = new Error('Все зеркала временно ограничили загрузки (HTTP 429).');
+    const error = /** @type {any} */ (new Error('Все зеркала временно ограничили загрузки (HTTP 429).'));
     error.allCooldown = true;
     error.retryLater = true;
     throw error;
@@ -1183,13 +1266,13 @@ async function downloadFromMirrors(setId, job) {
 
   if (cooldowns.length > 0 && !allMissing) {
     // Часть зеркал остывает — откладываем этот набор в конец очереди, не блокируя остальные наборы
-    const error = new Error(`зеркало(а) остывают/отдают 429 — набор отложен: ${[...failures.values()].filter(Boolean).join('; ') || 'зеркала остывали'}`);
+    const error = /** @type {any} */ (new Error(`зеркало(а) остывают/отдают 429 — набор отложен: ${[...failures.values()].filter(Boolean).join('; ') || 'зеркала остывали'}`));
     error.deferSet = true;
     throw error;
   }
   const detail = [...failures.values()].filter(Boolean).join('; ');
   if (!detail) {
-    const error = new Error('ни одно зеркало не ответило (все на cooldown) — набор отложен');
+    const error = /** @type {any} */ (new Error('ни одно зеркало не ответило (все на cooldown) — набор отложен'));
     error.allCooldown = true;
     error.retryLater = true;
     throw error;
@@ -1269,16 +1352,17 @@ async function runJob(job, auth) {
       if (auth.kind === 'mirror') await downloadFromMirrors(setId, job);
       else await downloadSet(setId, auth, job);
     } catch (error) {
+      const err = /** @type {any} */ (error);
       if (job.status !== 'cancelled') {
         if (isNoSpaceError(error)) {
           job.message = `Набор ${setId}: на диске закончилось свободное место (ENOSPC). Загрузка приостановлена — освободите место и нажмите «Продолжить».`;
           stopForNoSpace = true;
           log('error', 'download.job.enospc', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
-        } else if (error.allCooldown) {
+        } else if (err.allCooldown) {
           job.message = `Все зеркала временно ограничили загрузки (HTTP 429). Загрузка приостановлена — повторите позже, готовые файлы будут пропущены.`;
           stopForCooldown = true;
           log('warn', 'download.job.all_cooldown', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
-        } else if (error.deferSet) {
+        } else if (err.deferSet) {
           deferredSetIds.add(setId);
           job.message = `Набор ${setId}: часть зеркал остывает — откладываю набор в конец очереди.`;
           log('info', 'download.job.set_deferred', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
@@ -1323,13 +1407,14 @@ async function runJob(job, auth) {
         else await downloadSet(setId, auth, job);
         deferredSetIds.delete(setId);
       } catch (error) {
+        const err = /** @type {any} */ (error);
         if (job.status !== 'cancelled') {
           if (isNoSpaceError(error)) {
             job.message = `Набор ${setId}: на диске закончилось свободное место (ENOSPC). Загрузка приостановлена — освободите место и нажмите «Продолжить».`;
             stopForNoSpace = true;
             log('error', 'download.job.enospc', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
             break;
-          } else if (error.allCooldown || error.deferSet) {
+          } else if (err.allCooldown || err.deferSet) {
             job.message = `Набор ${setId}: зеркала остывают — загрузка приостановлена.`;
             stopForCooldown = true;
             log('warn', 'download.job.deferred_final_pause', { jobId: job.id, beatmapsetId: setId, error: safeErrorMessage(error) });
@@ -1404,7 +1489,7 @@ async function runJob(job, auth) {
     });
     job.finishedAt = Date.now();
     delete job.pausedAt;
-    log('error', 'download.job.fatal_error', { jobId: job.id, error: errMessage, stack: fatalError?.stack });
+    log('error', 'download.job.fatal_error', { jobId: job.id, error: errMessage, stack: /** @type {any} */ (fatalError)?.stack });
   } finally {
     job.currentSetId = null;
     job.currentMirror = null;
@@ -1498,7 +1583,7 @@ async function postOsuToken(payload, event, kind) {
     const detail = (data.error_description || data.error || raw.replace(/\s+/g, ' ').slice(0, 200) || `HTTP ${response.status}`).slice(0, 300);
     const safeDetail = safeErrorMessage(detail);
     log('error', event, { grant: payload.grant_type, status: response.status, durationMs: Date.now() - startedAt, detail: safeDetail });
-    const err = new HttpError(response.status === 400 || response.status === 401 ? 502 : response.status, `osu! отклонил запрос токена (HTTP ${response.status}): ${safeDetail}`);
+    const err = /** @type {any} */ (new HttpError(response.status === 400 || response.status === 401 ? 502 : response.status, `osu! отклонил запрос токена (HTTP ${response.status}): ${safeDetail}`));
     err.status = response.status;
     err.upstreamStatus = response.status;
     err.oauthError = data.error || null;
@@ -1535,10 +1620,11 @@ async function ensureOsuToken() {
       await postOsuToken({ grant_type: 'refresh_token', refresh_token: oauthToken.refreshToken, scope: oauthToken.scope || 'public identify' }, 'oauth.token.refreshed', oauthToken.kind);
       return oauthToken.accessToken;
     } catch (error) {
+      const err = /** @type {any} */ (error);
       // Временные сбои (сеть/таймаут/5xx) не трогают refresh-токен: он всё ещё может быть валиден.
       // Только явный отказ провайдера (4xx) означает, что refresh скомпрометирован/просрочен.
-      const status = error?.upstreamStatus ?? error?.status ?? (error instanceof HttpError ? error.httpStatus : null);
-      const isInvalidGrant = error?.oauthError === 'invalid_grant' || /invalid_grant/i.test(error?.message || '');
+      const status = err?.upstreamStatus ?? err?.status ?? (err instanceof HttpError ? err.httpStatus : null);
+      const isInvalidGrant = err?.oauthError === 'invalid_grant' || /invalid_grant/i.test(err?.message || '');
       const permanent = (typeof status === 'number' && status >= 400 && status < 500) || isInvalidGrant;
       if (permanent) {
         oauthToken.accessToken = null;
@@ -1547,7 +1633,7 @@ async function ensureOsuToken() {
         oauthToken.kind = null;
         oauthToken.scope = null;
       }
-      log('warn', 'oauth.token.refresh_failed', { error: safeErrorMessage(error), permanent, upstreamStatus: error?.upstreamStatus || null });
+      log('warn', 'oauth.token.refresh_failed', { error: safeErrorMessage(error), permanent, upstreamStatus: err?.upstreamStatus || null });
       throw new HttpError(permanent ? 401 : 503, permanent
         ? 'Не удалось обновить OAuth-токен — войдите через osu! повторно.'
         : `osu! недоступен при обновлении OAuth-токена — попробуйте позже. ${safeErrorMessage(error)}`);
@@ -1616,7 +1702,7 @@ async function handleOauthCallback(req, res, url) {
     await postOsuToken({ grant_type: 'authorization_code', code, redirect_uri: CALLBACK_URL }, 'oauth.token.issued', 'authorization_code');
     finish('oauth=connected');
   } catch (error) {
-    fail(error.message);
+    fail(/** @type {any} */ (error).message);
   }
 }
 
@@ -1933,11 +2019,12 @@ const server = http.createServer(async (req, res) => {
     });
     res.end(content);
   } catch (error) {
+    const err = /** @type {any} */ (error);
     log('error', 'http.request.failed', { method: req.method, path: url.pathname, error: safeErrorMessage(error) });
-    const status = (typeof error?.httpStatus === 'number')
-      ? error.httpStatus
-      : (typeof error?.status === 'number' && error.status >= 400 && error.status <= 599)
-        ? error.status
+    const status = (typeof err?.httpStatus === 'number')
+      ? err.httpStatus
+      : (typeof err?.status === 'number' && err.status >= 400 && err.status <= 599)
+        ? err.status
         : 500;
     json(res, status, { error: safeErrorMessage(error) || 'Внутренняя ошибка.' });
   }
@@ -1984,13 +2071,13 @@ if (require.main === module) {
 
   void bootstrapAfterListen();
 
-  server.on('error', error => {
+  server.on('error', (/** @type {any} */ error) => {
     log('error', 'server.failed', { error: safeErrorMessage(error), port: PORT });
     // EADDRINUSE должен валить процесс ненулевым кодом, а не висеть с «успешным» ранее выведенным URL.
     if (error?.code === 'EADDRINUSE') process.exit(1);
   });
 
-  process.on('unhandledRejection', reason => {
+  process.on('unhandledRejection', (/** @type {any} */ reason) => {
     log('error', 'process.unhandled_rejection', { error: safeErrorMessage(reason), stack: reason?.stack });
   });
 

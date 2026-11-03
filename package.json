@@ -5,9 +5,14 @@
   "description": "Local web app to download beatmap sets from osu!Collector",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "check": "tsc -p jsconfig.json"
   },
   "engines": {
     "node": ">=20.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
   }
 }

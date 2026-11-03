@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "checkJs": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": [
+    "server.js",
+    "app.js",
+    "test/**/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "downloads"
+  ]
+}
