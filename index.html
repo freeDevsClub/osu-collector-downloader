@@ -382,6 +382,38 @@
       .method-option.locked {
         opacity: 0.5;
       }
+      .download-options {
+        margin-top: 12px;
+      }
+      .checkbox-option {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: #d5d2dd;
+        cursor: pointer;
+        user-select: none;
+      }
+      .checkbox-option input {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--pink);
+        margin: 0;
+        cursor: pointer;
+      }
+      .checkbox-option small {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 400;
+        margin-left: 3px;
+      }
+      .checkbox-option:has(input:disabled) {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .checkbox-option input:disabled {
+        cursor: not-allowed;
+      }
       .mirror-panel {
         margin-top: 14px;
         border: 1px solid var(--line);
@@ -907,6 +939,12 @@
                 id="mirror-status"
                 class="mirror-status"
               ></div>
+            </div>
+            <div class="download-options">
+              <label class="checkbox-option" id="label-novideo">
+                <input type="checkbox" id="checkbox-novideo" />
+                <span>Скачивать без видео<small>(быстрее, экономит до 70% места)</small></span>
+              </label>
             </div>
             <div class="action-row">
               <button id="download-button" type="button" disabled>

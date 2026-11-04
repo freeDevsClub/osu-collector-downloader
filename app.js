@@ -32,11 +32,27 @@ const progressTrack = byId('progress-track');
 const transferBar = byId('transfer-bar');
 const transferTrack = byId('transfer-track');
 const sessionInput = byId('session-cookie');
+const checkboxNoVideo = /** @type {HTMLInputElement | null} */ (byId('checkbox-novideo'));
 /** @type {HTMLInputElement[]} */
 const methodInputs = /** @type {any} */ ([...document.querySelectorAll('input[name="download-method"]')]);
 const JOB_STORAGE_KEY = 'osu-collector-downloader.jobId';
+const NOVIDEO_STORAGE_KEY = 'osu-collector-downloader.noVideo';
 const POLL_INTERVAL_MS = 1300;
 const POLL_MAX_FAILURES = 3;
+
+if (checkboxNoVideo) {
+  try {
+    const saved = localStorage.getItem(NOVIDEO_STORAGE_KEY);
+    if (saved !== null) {
+      checkboxNoVideo.checked = saved === 'true';
+    }
+  } catch {}
+  checkboxNoVideo.addEventListener('change', () => {
+    try {
+      localStorage.setItem(NOVIDEO_STORAGE_KEY, String(checkboxNoVideo.checked));
+    } catch {}
+  });
+}
 
 let mapListRenderId = 0;
 
@@ -97,6 +113,9 @@ function updateDownloadButton() {
   const method = selectedMethod();
   const ready = Boolean(collection && collection.count) && methodReady(method) && !activeJob;
   downloadButton.disabled = !ready;
+  if (checkboxNoVideo) {
+    checkboxNoVideo.disabled = Boolean(activeJob);
+  }
   methodInputs.forEach(input => {
     const option = byId(`option-${input.value}`);
     option?.classList.toggle('selected', input.checked);
@@ -281,9 +300,10 @@ downloadButton.addEventListener('click', async () => {
   setStatus(downloadStatus, 'Создаю задачу загрузки…');
   progressWrap.classList.add('visible');
   try {
-    const job = await api(`/api/downloads?method=${method}`, {
+    const noVideo = Boolean(checkboxNoVideo?.checked);
+    const job = await api(`/api/downloads?method=${method}${noVideo ? '&noVideo=1' : ''}`, {
       method: 'POST',
-      body: JSON.stringify(collectionPayload()),
+      body: JSON.stringify({ ...collectionPayload(), noVideo }),
       // Создание задачи запрашивает коллекцию у osu!Collector — даём больше 20 секунд по умолчанию.
       timeoutMs: 60000,
     });
@@ -390,6 +410,9 @@ function updateJob(job) {
   if (Array.isArray(job.mirrors)) {
     updateMirrorsFromData(job.mirrors);
   }
+  if (checkboxNoVideo && typeof job.noVideo === 'boolean' && activeJob) {
+    checkboxNoVideo.checked = job.noVideo;
+  }
   const total = job.total || 0;
   const percent = total ? Math.round(job.completed / total * 100) : 0;
   const currentPercent = Number.isFinite(job.currentPercent) ? job.currentPercent : null;
@@ -404,7 +427,7 @@ function updateJob(job) {
   byId('transfer-bytes').textContent = job.currentTotalBytes
     ? `${formatBytes(job.currentBytes)} / ${formatBytes(job.currentTotalBytes)}${currentPercent === null ? '' : ` · ${currentPercent}%`}`
     : `${formatBytes(job.currentBytes)} загружено${currentPercent === null ? ' · размер неизвестен' : ` · ${currentPercent}%`}`;
-  byId('transfer-label').textContent = (job.currentSetName || (job.currentSetId ? `Набор ${job.currentSetId}` : 'Прогресс текущего набора')) + (job.currentMirror ? ` · ${job.currentMirror}` : '');
+  byId('transfer-label').textContent = (job.currentSetName || (job.currentSetId ? `Набор ${job.currentSetId}` : 'Прогресс текущего набора')) + (job.currentMirror ? ` · ${job.currentMirror}` : '') + (job.noVideo ? ' · без видео' : '');
   byId('downloaded-count').textContent = String(job.downloaded);
   byId('skipped-count').textContent = String(job.skipped);
   byId('failed-count').textContent = String(job.failed);

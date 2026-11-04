@@ -15,7 +15,9 @@ const {
   ENABLE_OAUTH,
   CALLBACK_URL,
   MIRRORS,
+  DEFAULT_MIRRORS,
   DOWNLOAD_CONCURRENCY,
+  buildMirrorUrl,
   log,
   HttpError,
   json,
@@ -60,6 +62,7 @@ const {
   cleanupStalePartFiles,
   ensureDiskSpace,
   estimateRequiredDiskSpace,
+  appendNoVideo,
   verifyZipFile,
   downloadSet,
   downloadFromMirrors,
@@ -285,6 +288,8 @@ async function handleApi(req, res, url) {
     }
 
     const body = await readJson(req);
+    const noVideoParam = url.searchParams.get('noVideo');
+    const noVideo = noVideoParam === '1' || noVideoParam === 'true' || body?.noVideo === true || body?.noVideo === 1 || body?.noVideo === '1';
     const collectionId = extractCollectionId(body?.url);
     if (currentActive && currentActive.status === 'paused') {
       if (currentActive.collectionId === collectionId) {
@@ -312,6 +317,7 @@ async function handleApi(req, res, url) {
     const job = {
       id: crypto.randomBytes(16).toString('hex'),
       method,
+      noVideo,
       collectionId,
       collectionName: typeof data.name === 'string' ? data.name : `Коллекция ${collectionId}`,
       setIds,
@@ -337,7 +343,7 @@ async function handleApi(req, res, url) {
     jobs.set(job.id, job);
 
     try {
-      const requiredBytes = await estimateRequiredDiskSpace(setIds);
+      const requiredBytes = await estimateRequiredDiskSpace(setIds, noVideo);
       await ensureDiskSpace(requiredBytes);
     } catch (error) {
       jobs.delete(job.id);
@@ -345,7 +351,7 @@ async function handleApi(req, res, url) {
       throw error;
     }
 
-    log('info', 'download.job.created', { jobId: job.id, method, mirrors: method === 'mirror' ? MIRRORS.map(mirror => mirror.id) : undefined, collectionId, collectionName: job.collectionName, total: setIds.length });
+    log('info', 'download.job.created', { jobId: job.id, method, noVideo, mirrors: method === 'mirror' ? MIRRORS.map(mirror => mirror.id) : undefined, collectionId, collectionName: job.collectionName, total: setIds.length });
     launchJob(job, auth);
     return json(res, 202, safeJobForClient(job));
   }
@@ -561,11 +567,14 @@ module.exports = {
   parseSetIds,
   fallbackMapInfo,
   MIRRORS,
+  DEFAULT_MIRRORS,
   mirrorCooldowns,
   acquireMirrorSlot,
   isMirrorBusy,
   resetMirrorSlots,
   DOWNLOAD_CONCURRENCY,
+  buildMirrorUrl,
+  appendNoVideo,
   jobs,
   sessions,
   oauthStates,
