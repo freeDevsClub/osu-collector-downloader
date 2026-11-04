@@ -524,6 +524,9 @@ function finishJob(job, errorMessage = '') {
   else if (job?.status === 'finished_with_errors') setStatus(downloadStatus, `${job.message} Успешные загрузки лежат в папке downloads.`, 'error');
   else if (job?.status === 'cancelled') setStatus(downloadStatus, 'Загрузка остановлена. Уже скачанные файлы сохранены.');
   updateDownloadButton();
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
 }
 
 resumeButton.addEventListener('click', async () => {

@@ -294,8 +294,15 @@
         max-height: 340px;
         overflow-y: auto;
         overflow-x: hidden;
+        overscroll-behavior-y: contain;
         scrollbar-width: thin;
         scrollbar-color: #4a4855 transparent;
+      }
+      .map-list:focus {
+        outline: none;
+      }
+      .map-list:focus-visible {
+        outline: 1px solid var(--pink);
       }
       .map-list::-webkit-scrollbar {
         width: 9px;
@@ -319,8 +326,6 @@
         padding: 10px 12px;
         font-size: 12px;
         min-width: 0;
-        content-visibility: auto;
-        contain-intrinsic-size: auto 54px;
       }
       .map-title {
         color: #f0edf4;
@@ -522,6 +527,7 @@
         margin-top: 10px;
         max-height: 200px;
         overflow-y: auto;
+        overscroll-behavior-y: contain;
         display: flex;
         flex-direction: column;
         gap: 8px;
@@ -712,6 +718,7 @@
               <ul
                 id="map-list"
                 class="map-list"
+                tabindex="0"
                 aria-label="Список наборов карт"
               ></ul>
             </div>
