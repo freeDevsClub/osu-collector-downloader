@@ -15,6 +15,7 @@ const {
   ENABLE_OAUTH,
   CALLBACK_URL,
   MIRRORS,
+  DOWNLOAD_CONCURRENCY,
   log,
   HttpError,
   json,
@@ -47,6 +48,9 @@ const {
   mirrorCooldowns,
   mirrorCooldownRemaining,
   parseRetryAfter,
+  acquireMirrorSlot,
+  isMirrorBusy,
+  resetMirrorSlots,
 } = require('./lib/mirrors.js');
 
 const {
@@ -558,6 +562,10 @@ module.exports = {
   fallbackMapInfo,
   MIRRORS,
   mirrorCooldowns,
+  acquireMirrorSlot,
+  isMirrorBusy,
+  resetMirrorSlots,
+  DOWNLOAD_CONCURRENCY,
   jobs,
   sessions,
   oauthStates,
