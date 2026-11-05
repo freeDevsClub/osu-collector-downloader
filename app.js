@@ -55,6 +55,10 @@ if (checkboxNoVideo) {
 }
 
 let mapListRenderId = 0;
+const mapElementsById = new Map();
+let metadataPollTimer = null;
+let metadataPollInFlight = false;
+let pollingCollectionId = null;
 
 let collection = null;
 let activeJob = null;
@@ -177,6 +181,7 @@ function renderMapList(maps = []) {
   const renderId = ++mapListRenderId;
   const list = byId('map-list');
   list.replaceChildren();
+  mapElementsById.clear();
   const CHUNK_SIZE = 250;
   let index = 0;
   const renderChunk = () => {
@@ -189,11 +194,15 @@ function renderMapList(maps = []) {
       title.className = 'map-title';
       title.textContent = map?.label || `Набор ${map?.id ?? ''}`;
       item.append(title);
+      let creator = null;
       if (map?.creator) {
-        const creator = document.createElement('span');
+        creator = document.createElement('span');
         creator.className = 'map-creator';
         creator.textContent = `маппер: ${map.creator}`;
         item.append(creator);
+      }
+      if (map?.id) {
+        mapElementsById.set(map.id, { item, title, creator });
       }
       fragment.append(item);
     }
@@ -209,6 +218,97 @@ function renderMapList(maps = []) {
   renderChunk();
 }
 
+function updateMapListLabels(maps = []) {
+  for (const map of maps) {
+    if (!map || !map.id) continue;
+    const elements = mapElementsById.get(map.id);
+    if (!elements) continue;
+    const expectedLabel = map.label || `Набор ${map.id}`;
+    if (elements.title.textContent !== expectedLabel) {
+      elements.title.textContent = expectedLabel;
+    }
+    if (map.creator) {
+      const creatorText = `маппер: ${map.creator}`;
+      if (elements.creator) {
+        if (elements.creator.textContent !== creatorText) {
+          elements.creator.textContent = creatorText;
+        }
+      } else {
+        const creator = document.createElement('span');
+        creator.className = 'map-creator';
+        creator.textContent = creatorText;
+        elements.item.append(creator);
+        elements.creator = creator;
+      }
+    }
+  }
+}
+
+function updateMetadataBadge(data) {
+  let chip = byId('metadata-chip');
+  if (data.metadataComplete) {
+    if (chip) chip.remove();
+    return;
+  }
+  if (!chip) {
+    chip = document.createElement('span');
+    chip.id = 'metadata-chip';
+    chip.className = 'chip loading';
+    byId('collection-meta').append(chip);
+  }
+  chip.textContent = `Загрузка названий (${data.metadataProgress || 0}/${data.count || 0})…`;
+}
+
+function stopMetadataPolling() {
+  if (metadataPollTimer) {
+    clearTimeout(metadataPollTimer);
+    metadataPollTimer = null;
+  }
+  metadataPollInFlight = false;
+  pollingCollectionId = null;
+}
+
+function startMetadataPolling(collectionId) {
+  stopMetadataPolling();
+  pollingCollectionId = String(collectionId);
+  scheduleNextMetadataPoll(1200);
+}
+
+function scheduleNextMetadataPoll(delay = 1200) {
+  if (metadataPollTimer) clearTimeout(metadataPollTimer);
+  metadataPollTimer = setTimeout(() => { void pollMetadata(); }, delay);
+}
+
+async function pollMetadata() {
+  if (!pollingCollectionId || metadataPollInFlight) return;
+  metadataPollInFlight = true;
+  try {
+    const data = await api(`/api/collections/${pollingCollectionId}`);
+    if (!pollingCollectionId || String(data.id) !== pollingCollectionId) return;
+
+    if (collection && String(collection.id) === pollingCollectionId) {
+      collection.maps = data.maps;
+      collection.metadataComplete = data.metadataComplete;
+      collection.metadataProgress = data.metadataProgress;
+    }
+
+    updateMetadataBadge(data);
+    updateMapListLabels(data.maps);
+
+    if (data.metadataComplete) {
+      stopMetadataPolling();
+      return;
+    }
+    scheduleNextMetadataPoll(1200);
+  } catch {
+    if (pollingCollectionId) {
+      scheduleNextMetadataPoll(2500);
+    }
+  } finally {
+    metadataPollInFlight = false;
+  }
+}
+
 function renderCollection(data) {
   collection = data;
   byId('collection-name').textContent = data.name;
@@ -222,16 +322,25 @@ function renderCollection(data) {
     chip.textContent = text;
     byId('collection-meta').append(chip);
   }
+  updateMetadataBadge(data);
+
   renderMapList(data.maps || (data.setIds || []).map(id => ({ id })));
   collectionCard.classList.add('visible');
   updateDownloadButton();
   setStatus(collectionStatus, `Найдено ${data.count} уникальных наборов карт.`, 'success');
+
+  if (!data.metadataComplete) {
+    startMetadataPolling(data.id);
+  } else {
+    stopMetadataPolling();
+  }
 }
 
 collectionForm.addEventListener('submit', async event => {
   event.preventDefault();
   const value = collectionUrl.value.trim();
   if (!value) return;
+  stopMetadataPolling();
   previewButton.disabled = true;
   previewButton.textContent = 'Ищем…';
   collectionCard.classList.remove('visible');

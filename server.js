@@ -43,7 +43,9 @@ const {
   fallbackMapInfo,
   fetchMapsetInfo,
   fetchCollection,
+  collectionCache,
   pruneCollectionCache,
+  populateMetadataInBackground,
 } = require('./lib/collector.js');
 
 const {
@@ -253,6 +255,25 @@ async function handleApi(req, res, url) {
       beatmapCount: data.beatmapCount,
       maps: data.maps,
       setIds: data.setIds,
+      metadataComplete: Boolean(data.metadataComplete),
+      metadataProgress: Number(data.metadataProgress || 0),
+    });
+  }
+
+  const collectionMatch = req.method === 'GET' && url.pathname.match(/^\/api\/collections\/([0-9]+)$/);
+  if (collectionMatch) {
+    const collectionId = collectionMatch[1];
+    const data = await fetchCollection(collectionId);
+    return json(res, 200, {
+      id: data.id,
+      name: data.name,
+      uploader: data.uploader,
+      count: data.count,
+      beatmapCount: data.beatmapCount,
+      maps: data.maps,
+      setIds: data.setIds,
+      metadataComplete: Boolean(data.metadataComplete),
+      metadataProgress: Number(data.metadataProgress || 0),
     });
   }
 
@@ -326,7 +347,7 @@ async function handleApi(req, res, url) {
       errIds: new Set(),
       errorsById: new Map(),
       extraFailures: 0,
-      mapsById: new Map((data.maps || fallbackMapInfo(setIds)).map((/** @type {any} */ map) => [map.id, map])),
+      mapsById: data.mapsById || new Map((data.maps || fallbackMapInfo(setIds)).map((/** @type {any} */ map) => [map.id, map])),
       currentBytes: 0,
       currentTotalBytes: null,
       currentPercent: 0,
@@ -564,6 +585,9 @@ module.exports = {
   downloadFromMirrors,
   downloadSet,
   fetchMapsetInfo,
+  fetchCollection,
+  populateMetadataInBackground,
+  collectionCache,
   parseSetIds,
   fallbackMapInfo,
   MIRRORS,
