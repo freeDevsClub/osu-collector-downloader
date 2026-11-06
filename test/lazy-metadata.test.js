@@ -19,7 +19,7 @@ describe('Мгновенный старт и ленивая подгрузка �
   before(async () => {
     serverInstance = server.listen(0, '127.0.0.1');
     await new Promise(resolve => serverInstance.once('listening', resolve));
-    serverPort = serverInstance.address().port;
+    serverPort = /** @type {import('node:net').AddressInfo} */ (serverInstance.address()).port;
   });
 
   after(async () => {
@@ -32,7 +32,8 @@ describe('Мгновенный старт и ленивая подгрузка �
   });
 
   it('fetchCollection немедленно возвращает структуру коллекции без ожидания пагинации beatmapsV2', async () => {
-    let resolveBeatmapsV2;
+    /** @type {(value?: any) => void} */
+    let resolveBeatmapsV2 = () => {};
     const beatmapsV2Promise = new Promise(resolve => {
       resolveBeatmapsV2 = resolve;
     });
@@ -106,7 +107,8 @@ describe('Мгновенный старт и ленивая подгрузка �
   });
 
   it('job.mapsById автоматически отражает названия по мере фонового обогащения', async () => {
-    let resolveBeatmaps;
+    /** @type {(value?: any) => void} */
+    let resolveBeatmaps = () => {};
     const beatmapsBarrier = new Promise(resolve => {
       resolveBeatmaps = resolve;
     });
@@ -188,7 +190,8 @@ describe('Мгновенный старт и ленивая подгрузка �
   });
 
   it('HTTP API POST /api/collections и GET /api/collections/:id отдают статус метаданных', async () => {
-    let resolvePaging;
+    /** @type {(value?: any) => void} */
+    let resolvePaging = () => {};
     const pagingGate = new Promise(resolve => {
       resolvePaging = resolve;
     });

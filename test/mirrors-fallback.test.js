@@ -36,7 +36,7 @@ describe('Интеграционные тесты fallback между зерка
       res.end('Rate limited');
     });
     await new Promise(r => s1.listen(0, '127.0.0.1', r));
-    port1 = s1.address().port;
+    port1 = /** @type {import('node:net').AddressInfo} */ (s1.address()).port;
 
     // Зеркало 2: всегда 500 (временный сбой)
     s2 = http.createServer((req, res) => {
@@ -44,7 +44,7 @@ describe('Интеграционные тесты fallback между зерка
       res.end('Internal Server Error');
     });
     await new Promise(r => s2.listen(0, '127.0.0.1', r));
-    port2 = s2.address().port;
+    port2 = /** @type {import('node:net').AddressInfo} */ (s2.address()).port;
 
     // Зеркало 3: всегда 200 с валидным ZIP
     s3 = http.createServer((req, res) => {
@@ -55,7 +55,7 @@ describe('Интеграционные тесты fallback между зерка
       res.end(validZipBuffer);
     });
     await new Promise(r => s3.listen(0, '127.0.0.1', r));
-    port3 = s3.address().port;
+    port3 = /** @type {import('node:net').AddressInfo} */ (s3.address()).port;
 
     originalMirrors = [...MIRRORS];
   });

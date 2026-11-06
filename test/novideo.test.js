@@ -42,7 +42,7 @@ describe('Режим скачивания «Без видео» (No Video)', () 
       res.end(validZipBuffer);
     });
     await new Promise(r => server.listen(0, '127.0.0.1', r));
-    serverPort = server.address().port;
+    serverPort = /** @type {import('node:net').AddressInfo} */ (server.address()).port;
   });
 
   after(async () => {

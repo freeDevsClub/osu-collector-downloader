@@ -76,9 +76,9 @@ describe('Worker Pool и per-mirror concurrency', () => {
       new Promise(r => s3.listen(0, '127.0.0.1', r)),
     ]);
 
-    port1 = s1.address().port;
-    port2 = s2.address().port;
-    port3 = s3.address().port;
+    port1 = /** @type {import('node:net').AddressInfo} */ (s1.address()).port;
+    port2 = /** @type {import('node:net').AddressInfo} */ (s2.address()).port;
+    port3 = /** @type {import('node:net').AddressInfo} */ (s3.address()).port;
 
     originalMirrors = [...MIRRORS];
   });
