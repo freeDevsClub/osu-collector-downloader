@@ -21,6 +21,7 @@ const previewButton = byId('preview-button');
 const downloadButton = byId('download-button');
 const cancelButton = byId('cancel-button');
 const resumeButton = byId('resume-button');
+const retryFailedButton = byId('retry-failed-button');
 const collectionCard = byId('collection-card');
 const collectionStatus = byId('collection-status');
 const downloadStatus = byId('download-status');
@@ -63,6 +64,7 @@ let pollingCollectionId = null;
 let collection = null;
 let activeJob = null;
 let pausedJob = null;
+let lastJobId = null;
 let pollTimer = null;
 let pollInFlight = false;
 let pollFailures = 0;
@@ -418,6 +420,7 @@ downloadButton.addEventListener('click', async () => {
     });
     pausedJob = null;
     resumeButton.hidden = true;
+    if (retryFailedButton) retryFailedButton.hidden = true;
     startJobPolling(job.id);
     updateJob(job);
     void loadMirrors();
@@ -455,6 +458,7 @@ function startJobPolling(id) {
   persistJobId(id);
   cancelButton.hidden = false;
   resumeButton.hidden = true;
+  if (retryFailedButton) retryFailedButton.hidden = true;
   progressWrap.classList.add('visible');
   scheduleNextPoll(0);
 }
@@ -516,11 +520,20 @@ async function pollJob() {
 }
 
 function updateJob(job) {
+  if (job?.id) lastJobId = job.id;
   if (Array.isArray(job.mirrors)) {
     updateMirrorsFromData(job.mirrors);
   }
   if (checkboxNoVideo && typeof job.noVideo === 'boolean' && activeJob) {
     checkboxNoVideo.checked = job.noVideo;
+  }
+  if (retryFailedButton) {
+    const isRunning = ['queued', 'running'].includes(job.status);
+    const canRetry = Boolean(!isRunning && (job.canRetryFailed ?? (job.failed > 0)));
+    retryFailedButton.hidden = !canRetry;
+    if (canRetry) {
+      retryFailedButton.textContent = job.failed ? `Повторить ошибки (${job.failed})` : 'Повторить ошибки';
+    }
   }
   const total = job.total || 0;
   const percent = total ? Math.round(job.completed / total * 100) : 0;
@@ -633,6 +646,7 @@ function hasActiveCooldowns() {
 function finishJob(job, errorMessage = '') {
   stopPolling();
   activeJob = null;
+  if (job?.id) lastJobId = job.id;
   const canResume = (job?.status === 'paused' || (job?.status === 'finished_with_errors' && (job.deferred || 0) > 0)) && !errorMessage && !Number.isFinite(job.autoResumeAt);
   if (canResume) {
     pausedJob = job.id;
@@ -644,6 +658,13 @@ function finishJob(job, errorMessage = '') {
     resumeButton.hidden = true;
     cancelButton.hidden = true;
     persistJobId(null);
+  }
+  const canRetry = Boolean(job && (job.canRetryFailed ?? (job.failed > 0)) && !['queued', 'running'].includes(job.status));
+  if (retryFailedButton) {
+    retryFailedButton.hidden = !canRetry;
+    if (canRetry) {
+      retryFailedButton.textContent = job.failed ? `Повторить ошибки (${job.failed})` : 'Повторить ошибки';
+    }
   }
   if (job && ['finished', 'finished_with_errors'].includes(job.status)) {
     try {
@@ -676,6 +697,39 @@ resumeButton.addEventListener('click', async () => {
     resumeButton.disabled = false;
   }
 });
+if (retryFailedButton) {
+  retryFailedButton.addEventListener('click', async () => {
+    const targetId = activeJob || pausedJob || lastJobId;
+    if (!targetId) return;
+    const method = selectedMethod();
+    if (!methodReady(method)) {
+      setStatus(downloadStatus, method === 'oauth' ? 'Сначала подключите OAuth-приложение и войдите через osu!.' : 'Сначала сохраните cookie osu_session.', 'error');
+      return;
+    }
+    retryFailedButton.disabled = true;
+    setStatus(downloadStatus, 'Перезапуск загрузки наборов с ошибками…');
+    try {
+      const noVideo = Boolean(checkboxNoVideo?.checked);
+      const job = await api(`/api/downloads/${targetId}/retry-failed?method=${method}${noVideo ? '&noVideo=1' : ''}`, {
+        method: 'POST',
+        body: JSON.stringify({ noVideo }),
+      });
+      pausedJob = null;
+      resumeButton.hidden = true;
+      retryFailedButton.hidden = true;
+      cancelButton.hidden = false;
+      startJobPolling(job.id);
+      updateJob(job);
+      void loadMirrors();
+    } catch (rawError) {
+      const error = toAny(rawError);
+      setStatus(downloadStatus, error.message, 'warn');
+      void loadMirrors();
+    } finally {
+      retryFailedButton.disabled = false;
+    }
+  });
+}
 cancelButton.addEventListener('click', async () => {
   const targetId = activeJob || pausedJob;
   if (!targetId) return;
@@ -758,6 +812,9 @@ async function restoreJob() {
       updateJob(job);
     } else {
       persistJobId(null);
+      progressWrap.classList.add('visible');
+      updateJob(job);
+      finishJob(job);
     }
   } catch (rawError) {
     const error = toAny(rawError);
@@ -770,6 +827,7 @@ async function restoreJob() {
           if (lastJob && lastJob.id === storedId) {
             progressWrap.classList.add('visible');
             updateJob(lastJob);
+            finishJob(lastJob);
             setStatus(downloadStatus, `${lastJob.message || 'Загрузка завершена.'} (сохранено локально)`, lastJob.failed ? 'error' : 'success');
             return;
           }

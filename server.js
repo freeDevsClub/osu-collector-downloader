@@ -78,6 +78,8 @@ const {
   safeJobForClient,
   clearAutoResume,
   resumeJob,
+  retryFailedJob,
+  getFailedSetIds,
   launchJob,
   pruneJobs,
 } = require('./lib/jobs.js');
@@ -377,6 +379,30 @@ async function handleApi(req, res, url) {
     return json(res, 202, safeJobForClient(job));
   }
 
+/**
+ * Определяет параметры аутентификации для задачи (зеркала, session, oauth).
+ * @param {import('node:http').IncomingMessage} req
+ * @param {any} job
+ * @returns {Promise<any>}
+ */
+async function resolveJobAuth(req, job) {
+  if (job.method === 'mirror') {
+    return { kind: 'mirror' };
+  }
+  if (job.method === 'oauth') {
+    if (!ENABLE_OAUTH) {
+      throw new HttpError(403, 'OAuth-метод отключён на сервере (запустите с ENABLE_OAUTH=1).');
+    }
+    const token = await ensureOsuToken();
+    return { kind: 'oauth', token };
+  }
+  const session = getSession(req);
+  if (!session) {
+    throw new HttpError(401, 'Сначала сохраните cookie osu_session в приложении.');
+  }
+  return { kind: 'session', session };
+}
+
   const resumeMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/resume$/);
   if (req.method === 'POST' && resumeMatch) {
     const job = jobs.get(resumeMatch[1]);
@@ -390,6 +416,12 @@ async function handleApi(req, res, url) {
       return json(res, 409, { error: 'Продолжить можно только приостановленную загрузку.' });
     }
     let auth;
+    try {
+      auth = await resolveJobAuth(req, job);
+    } catch (error) {
+      if (error instanceof HttpError) return json(res, error.httpStatus, { error: error.message });
+      return json(res, 401, { error: safeErrorMessage(error) });
+    }
     if (job.method === 'mirror') {
       const cooldowns = MIRRORS.map(mirrorCooldownRemaining).filter(ms => ms > 0);
       if (cooldowns.length === MIRRORS.length) {
@@ -399,23 +431,9 @@ async function handleApi(req, res, url) {
           return json(res, 503, { error: `Зеркала ещё остывают после ограничения — попробуйте через ${Math.ceil(waitMs / 1000)} с.` }, { 'Retry-After': String(Math.max(1, Math.ceil(waitMs / 1000))) });
         }
       }
-      auth = { kind: 'mirror' };
-    } else if (job.method === 'oauth') {
-      if (!ENABLE_OAUTH) {
-        return json(res, 403, { error: 'OAuth-метод отключён на сервере (запустите с ENABLE_OAUTH=1).' });
-      }
-      try {
-        auth = { kind: 'oauth', token: await ensureOsuToken() };
-      } catch (error) {
-        return json(res, 401, { error: safeErrorMessage(error) });
-      }
-    } else {
-      const session = getSession(req);
-      if (!session) return json(res, 401, { error: 'Сначала сохраните cookie osu_session в приложении.' });
-      auth = { kind: 'session', session };
     }
     try {
-      const requiredBytes = await estimateRequiredDiskSpace(job.setIds);
+      const requiredBytes = await estimateRequiredDiskSpace(job.setIds, job.noVideo);
       await ensureDiskSpace(requiredBytes);
     } catch (error) {
       if (error instanceof HttpError) return json(res, error.httpStatus, { error: error.message });
@@ -423,6 +441,63 @@ async function handleApi(req, res, url) {
     }
     job.autoResumeCount = 0;
     resumeJob(job, auth);
+    return json(res, 202, safeJobForClient(job));
+  }
+
+  const retryFailedMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/retry-failed$/);
+  if (req.method === 'POST' && retryFailedMatch) {
+    const job = jobs.get(retryFailedMatch[1]);
+    if (!job) return json(res, 404, { error: 'Загрузка не найдена.' });
+    const currentActive = getActiveJob();
+    if (currentActive && currentActive !== job && ['queued', 'running'].includes(currentActive.status)) {
+      return json(res, 409, { error: 'Уже идёт другая загрузка — дождитесь её или нажмите «Остановить».' });
+    }
+    const failedIds = getFailedSetIds(job);
+    if (failedIds.length === 0) {
+      return json(res, 400, { error: 'В этой задаче нет ошибок для повторной загрузки.' });
+    }
+    if (['queued', 'running'].includes(job.status)) {
+      return json(res, 409, { error: 'Задача уже выполняется — дождитесь её завершения или остановите её.' });
+    }
+
+    const requestedMethod = url.searchParams.get('method');
+    if (requestedMethod && ['mirror', 'session', 'oauth'].includes(requestedMethod)) {
+      job.method = requestedMethod;
+    }
+    const noVideoParam = url.searchParams.get('noVideo');
+    if (noVideoParam !== null) {
+      job.noVideo = noVideoParam === '1' || noVideoParam === 'true';
+    }
+
+    let auth;
+    try {
+      auth = await resolveJobAuth(req, job);
+    } catch (authError) {
+      if (authError instanceof HttpError) return json(res, authError.httpStatus, { error: authError.message });
+      return json(res, 401, { error: safeErrorMessage(authError) });
+    }
+
+    if (job.method === 'mirror') {
+      const cooldowns = MIRRORS.map(mirrorCooldownRemaining).filter(ms => ms > 0);
+      if (cooldowns.length === MIRRORS.length) {
+        const waitMs = Math.min(...cooldowns);
+        if (waitMs > 1000) {
+          log('warn', 'download.job.retry_deferred', { jobId: job.id, waitMs });
+          return json(res, 503, { error: `Зеркала ещё остывают после ограничения — попробуйте через ${Math.ceil(waitMs / 1000)} с.` }, { 'Retry-After': String(Math.max(1, Math.ceil(waitMs / 1000))) });
+        }
+      }
+    }
+
+    try {
+      const requiredBytes = await estimateRequiredDiskSpace(failedIds, job.noVideo);
+      await ensureDiskSpace(requiredBytes);
+    } catch (spaceError) {
+      if (spaceError instanceof HttpError) return json(res, spaceError.httpStatus, { error: spaceError.message });
+      return json(res, 507, { error: safeErrorMessage(spaceError) });
+    }
+
+    job.autoResumeCount = 0;
+    retryFailedJob(job, auth);
     return json(res, 202, safeJobForClient(job));
   }
 
@@ -599,6 +674,8 @@ module.exports = {
   DOWNLOAD_CONCURRENCY,
   buildMirrorUrl,
   appendNoVideo,
+  retryFailedJob,
+  getFailedSetIds,
   jobs,
   sessions,
   oauthStates,

@@ -195,6 +195,13 @@
       button.secondary:hover:not(:disabled) {
         background: #2d2d39;
       }
+      button.warning {
+        color: #ffd188;
+        border-color: #ffd18855;
+      }
+      button.warning:hover:not(:disabled) {
+        background: #33281c;
+      }
       button.danger {
         color: #ffbdc2;
       }
@@ -957,6 +964,14 @@
               </button>
               <button id="resume-button" type="button" class="secondary" hidden>
                 Продолжить
+              </button>
+              <button
+                id="retry-failed-button"
+                type="button"
+                class="secondary warning"
+                hidden
+              >
+                Повторить ошибки
               </button>
               <button
                 id="cancel-button"
