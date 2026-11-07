@@ -106,6 +106,13 @@ const {
   pruneSessionsAndOauth,
 } = require('./lib/oauth.js');
 
+const {
+  getSettings: getOsuSettings,
+  saveSettings: saveOsuSettings,
+  classifyCollectionSets,
+  getCachedOsuSongs,
+} = require('./lib/osu.js');
+
 /**
  * Читает тело HTTP-запроса с лимитом размера и парсит его как JSON.
  * @param {import('node:http').IncomingMessage} req
@@ -138,6 +145,37 @@ async function readJson(req) {
  * @param {URL} url
  */
 async function handleApi(req, res, url) {
+  if (req.method === 'GET' && url.pathname === '/api/osu/settings') {
+    return json(res, 200, getOsuSettings());
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/osu/settings') {
+    const body = await readJson(req);
+    try {
+      const updated = await saveOsuSettings(body);
+      return json(res, 200, updated);
+    } catch (err) {
+      return json(res, 400, { error: safeErrorMessage(err) });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/osu/rescan') {
+    const settings = getOsuSettings();
+    if (!settings.valid || !settings.songsDir) {
+      return json(res, 400, { error: 'Директория Songs не настроена или недоступна.' });
+    }
+    const songs = getCachedOsuSongs(settings.songsDir, true);
+    settings.songsCount = songs.size;
+    return json(res, 200, { count: songs.size, songsCount: songs.size });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/osu/check') {
+    const body = await readJson(req);
+    const setIds = Array.isArray(body?.setIds) ? body.setIds : [];
+    const classification = classifyCollectionSets(setIds);
+    return json(res, 200, classification);
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/mirrors') {
     return json(res, 200, {
       mirrors: MIRRORS.map(mirror => ({ id: mirror.id, label: mirror.label, cooldownMs: mirrorCooldownRemaining(mirror) })),
@@ -255,6 +293,7 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const collectionId = extractCollectionId(body?.url);
     const data = await fetchCollection(collectionId);
+    const { installedSetIds, downloadedSetIds } = classifyCollectionSets(data.setIds);
     return json(res, 200, {
       id: data.id,
       name: data.name,
@@ -265,6 +304,8 @@ async function handleApi(req, res, url) {
       setIds: data.setIds,
       metadataComplete: Boolean(data.metadataComplete),
       metadataProgress: Number(data.metadataProgress || 0),
+      installedSetIds,
+      downloadedSetIds,
     });
   }
 
@@ -272,6 +313,7 @@ async function handleApi(req, res, url) {
   if (collectionMatch) {
     const collectionId = collectionMatch[1];
     const data = await fetchCollection(collectionId);
+    const { installedSetIds, downloadedSetIds } = classifyCollectionSets(data.setIds);
     return json(res, 200, {
       id: data.id,
       name: data.name,
@@ -282,6 +324,8 @@ async function handleApi(req, res, url) {
       setIds: data.setIds,
       metadataComplete: Boolean(data.metadataComplete),
       metadataProgress: Number(data.metadataProgress || 0),
+      installedSetIds,
+      downloadedSetIds,
     });
   }
 

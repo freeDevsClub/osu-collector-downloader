@@ -36,6 +36,15 @@ const sessionInput = byId('session-cookie');
 const checkboxNoVideo = /** @type {HTMLInputElement | null} */ (byId('checkbox-novideo'));
 /** @type {HTMLInputElement[]} */
 const methodInputs = /** @type {any} */ ([...document.querySelectorAll('input[name="download-method"]')]);
+const osuPathInput = /** @type {HTMLInputElement | null} */ (byId('osu-path-input'));
+const osuPathSave = byId('osu-path-save');
+const osuDot = byId('osu-dot');
+const osuText = byId('osu-text');
+const osuRescan = byId('osu-rescan');
+const osuStatus = byId('osu-status');
+const checkboxCheckExisting = /** @type {HTMLInputElement | null} */ (byId('checkbox-check-existing'));
+/** @type {HTMLInputElement[]} */
+const postActionInputs = /** @type {any} */ ([...document.querySelectorAll('input[name="post-download-action"]')]);
 const JOB_STORAGE_KEY = 'osu-collector-downloader.jobId';
 const NOVIDEO_STORAGE_KEY = 'osu-collector-downloader.noVideo';
 const POLL_INTERVAL_MS = 1300;
@@ -73,6 +82,14 @@ let pollFailures = 0;
 let sessionConnected = false;
 let oauthState = { enabled: true, configured: false, connected: false, callbackUrl: '' };
 let mirrorStatus = [];
+let osuSettings = {
+  osuPath: '',
+  songsDir: null,
+  valid: false,
+  songsCount: 0,
+  checkExisting: true,
+  postDownloadAction: 'none',
+};
 
 function setStatus(element, text = '', tone = '') {
   element.textContent = text;
@@ -179,6 +196,177 @@ function renderSessionState(connected) {
   updateDownloadButton();
 }
 
+function renderOsuSettings(settings) {
+  osuSettings = {
+    osuPath: settings?.osuPath || '',
+    songsDir: settings?.songsDir || null,
+    valid: Boolean(settings?.valid),
+    songsCount: Number(settings?.songsCount || 0),
+    checkExisting: settings?.checkExisting !== undefined ? Boolean(settings.checkExisting) : true,
+    postDownloadAction: ['none', 'move', 'extract', 'copy'].includes(settings?.postDownloadAction)
+      ? settings.postDownloadAction
+      : 'none',
+  };
+
+  if (osuPathInput && document.activeElement !== osuPathInput) {
+    osuPathInput.value = osuSettings.osuPath;
+  }
+  if (checkboxCheckExisting) {
+    checkboxCheckExisting.checked = osuSettings.checkExisting;
+  }
+  postActionInputs.forEach(input => {
+    input.checked = input.value === osuSettings.postDownloadAction;
+    const option = byId(`option-action-${input.value}`);
+    option?.classList.toggle('selected', input.checked);
+  });
+
+  const extraDetails = /** @type {HTMLDetailsElement | null} */ (byId('extra-actions-details'));
+  if (extraDetails && (osuSettings.postDownloadAction === 'move' || osuSettings.postDownloadAction === 'copy')) {
+    extraDetails.open = true;
+  }
+
+  if (osuDot) {
+    osuDot.className = `session-dot${osuSettings.valid ? ' connected' : ''}`;
+  }
+  if (osuText) {
+    if (osuSettings.valid && osuSettings.songsDir) {
+      osuText.textContent = `Подключено: найдено ${osuSettings.songsCount} наборов карт (${osuSettings.songsDir})`;
+    } else if (osuSettings.osuPath) {
+      osuText.textContent = 'Папка Songs не найдена по указанному пути';
+    } else {
+      osuText.textContent = 'Путь к игре osu! не настроен';
+    }
+  }
+}
+
+async function loadOsuSettings() {
+  try {
+    const data = await api('/api/osu/settings');
+    renderOsuSettings(data);
+    return data;
+  } catch {
+    renderOsuSettings(null);
+  }
+}
+
+async function saveOsuSettings(showToast = true) {
+  const osuPath = osuPathInput ? osuPathInput.value.trim() : osuSettings.osuPath;
+  const checkExisting = checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting;
+  const postDownloadAction = postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction;
+
+  if (osuPathSave) osuPathSave.disabled = true;
+  setStatus(osuStatus, 'Сохраняю настройки osu!…');
+  try {
+    const data = await api('/api/osu/settings', {
+      method: 'POST',
+      body: JSON.stringify({ osuPath, checkExisting, postDownloadAction }),
+    });
+    renderOsuSettings(data);
+    if (data.valid) {
+      setStatus(osuStatus, `Настройки сохранены. Найдено ${data.songsCount} наборов карт в osu! Songs.`, 'success');
+      if (showToast) notify(`osu! Songs подключена (${data.songsCount} наборов).`);
+    } else {
+      setStatus(osuStatus, 'Путь сохранён (папка osu! отключена).', '');
+      if (showToast) notify('Настройки osu! обновлены.');
+    }
+    await recheckCollectionOsu();
+  } catch (err) {
+    const message = toAny(err).message;
+    setStatus(osuStatus, message, 'error');
+    if (showToast) notify(`Ошибка: ${message}`);
+  } finally {
+    if (osuPathSave) osuPathSave.disabled = false;
+  }
+}
+
+async function rescanOsuSongs() {
+  if (osuRescan) osuRescan.disabled = true;
+  setStatus(osuStatus, 'Сканирую папку osu! Songs…');
+  try {
+    const data = await api('/api/osu/rescan', { method: 'POST' });
+    osuSettings.songsCount = Number(data.count || 0);
+    renderOsuSettings(osuSettings);
+    setStatus(osuStatus, `Сканирование завершено: найдено ${data.count} наборов карт.`, 'success');
+    notify(`Найдено ${data.count} наборов карт в osu! Songs.`);
+    await recheckCollectionOsu();
+  } catch (err) {
+    const message = toAny(err).message;
+    setStatus(osuStatus, message, 'error');
+    notify(message);
+  } finally {
+    if (osuRescan) osuRescan.disabled = false;
+  }
+}
+
+async function recheckCollectionOsu() {
+  if (!collection || !Array.isArray(collection.setIds) || collection.setIds.length === 0) return;
+  try {
+    const data = await api('/api/osu/check', {
+      method: 'POST',
+      body: JSON.stringify({ setIds: collection.setIds }),
+    });
+    collection.installedSetIds = data.installedSetIds || [];
+    collection.downloadedSetIds = data.downloadedSetIds || [];
+
+    let chipInst = byId('chip-installed');
+    if (collection.installedSetIds.length > 0) {
+      if (!chipInst) {
+        chipInst = document.createElement('span');
+        chipInst.id = 'chip-installed';
+        chipInst.className = 'chip chip-installed';
+        byId('collection-meta')?.append(chipInst);
+      }
+      chipInst.textContent = `В игре: ${collection.installedSetIds.length} из ${collection.count}`;
+    } else if (chipInst) {
+      chipInst.remove();
+    }
+
+    let chipDown = byId('chip-downloads');
+    if (collection.downloadedSetIds.length > 0) {
+      if (!chipDown) {
+        chipDown = document.createElement('span');
+        chipDown.id = 'chip-downloads';
+        chipDown.className = 'chip chip-downloads';
+        byId('collection-meta')?.append(chipDown);
+      }
+      chipDown.textContent = `В downloads: ${collection.downloadedSetIds.length}`;
+    } else if (chipDown) {
+      chipDown.remove();
+    }
+
+    refreshMapListBadges();
+    updateDownloadButton();
+  } catch {}
+}
+
+function updateMapBadge(badge, id) {
+  if (!badge || !id) return;
+  const isInstalled = collection?.installedSetIds?.includes(id);
+  const isDownloaded = collection?.downloadedSetIds?.includes(id);
+  if (isInstalled) {
+    badge.className = 'badge-tag tag-installed';
+    badge.textContent = 'В игре';
+    badge.title = 'Набор уже установлен в папке osu! Songs';
+  } else if (isDownloaded) {
+    badge.className = 'badge-tag tag-downloaded';
+    badge.textContent = 'Скачано';
+    badge.title = 'Файл .osz уже скачан в downloads/';
+  } else {
+    badge.className = 'badge-tag tag-new';
+    badge.textContent = 'Новый';
+    badge.title = 'Набор ещё не скачан';
+  }
+}
+
+function refreshMapListBadges() {
+  if (!collection) return;
+  for (const [id, elements] of mapElementsById.entries()) {
+    if (elements?.badge) {
+      updateMapBadge(elements.badge, id);
+    }
+  }
+}
+
 function renderMapList(maps = []) {
   // Список потенциально огромный (5000 выборок) — не рендерим всё за один проход, чтобы не завис браузер.
   // Защита от гонки: если пользователь повторно нажал «Показать карты», старый рендер прерывается.
@@ -194,10 +382,16 @@ function renderMapList(maps = []) {
     for (const map of maps.slice(index, index + CHUNK_SIZE)) {
       const item = document.createElement('li');
       item.className = 'map-id map-item';
+      const head = document.createElement('div');
+      head.className = 'map-item-head';
       const title = document.createElement('span');
       title.className = 'map-title';
       title.textContent = map?.label || `Набор ${map?.id ?? ''}`;
-      item.append(title);
+      head.append(title);
+      const badge = document.createElement('span');
+      updateMapBadge(badge, map?.id);
+      head.append(badge);
+      item.append(head);
       let creator = null;
       if (map?.creator) {
         creator = document.createElement('span');
@@ -206,7 +400,7 @@ function renderMapList(maps = []) {
         item.append(creator);
       }
       if (map?.id) {
-        mapElementsById.set(map.id, { item, title, creator });
+        mapElementsById.set(map.id, { item, title, creator, badge });
       }
       fragment.append(item);
     }
@@ -230,6 +424,9 @@ function updateMapListLabels(maps = []) {
     const expectedLabel = map.label || `Набор ${map.id}`;
     if (elements.title.textContent !== expectedLabel) {
       elements.title.textContent = expectedLabel;
+    }
+    if (elements.badge) {
+      updateMapBadge(elements.badge, map.id);
     }
     if (map.creator) {
       const creatorText = `маппер: ${map.creator}`;
@@ -294,6 +491,8 @@ async function pollMetadata() {
       collection.maps = data.maps;
       collection.metadataComplete = data.metadataComplete;
       collection.metadataProgress = data.metadataProgress;
+      if (Array.isArray(data.installedSetIds)) collection.installedSetIds = data.installedSetIds;
+      if (Array.isArray(data.downloadedSetIds)) collection.downloadedSetIds = data.downloadedSetIds;
     }
 
     updateMetadataBadge(data);
@@ -326,12 +525,34 @@ function renderCollection(data) {
     chip.textContent = text;
     byId('collection-meta').append(chip);
   }
+  if (Array.isArray(data.installedSetIds) && data.installedSetIds.length > 0) {
+    const chip = document.createElement('span');
+    chip.className = 'chip chip-installed';
+    chip.id = 'chip-installed';
+    chip.textContent = `В игре: ${data.installedSetIds.length} из ${data.count}`;
+    byId('collection-meta').append(chip);
+  }
+  if (Array.isArray(data.downloadedSetIds) && data.downloadedSetIds.length > 0) {
+    const chip = document.createElement('span');
+    chip.className = 'chip chip-downloads';
+    chip.id = 'chip-downloads';
+    chip.textContent = `В downloads: ${data.downloadedSetIds.length}`;
+    byId('collection-meta').append(chip);
+  }
   updateMetadataBadge(data);
 
   renderMapList(data.maps || (data.setIds || []).map(id => ({ id })));
   collectionCard.classList.add('visible');
   updateDownloadButton();
-  setStatus(collectionStatus, `Найдено ${data.count} уникальных наборов карт.`, 'success');
+
+  const installedCount = data.installedSetIds?.length || 0;
+  if (installedCount === data.count && data.count > 0) {
+    setStatus(collectionStatus, `Все ${data.count} наборов карт из этой коллекции уже есть в osu! Songs 👍`, 'success');
+  } else if (installedCount > 0) {
+    setStatus(collectionStatus, `Найдено ${data.count} наборов (${installedCount} уже в osu!, ${data.count - installedCount} новых).`, 'success');
+  } else {
+    setStatus(collectionStatus, `Найдено ${data.count} уникальных наборов карт.`, 'success');
+  }
 
   if (!data.metadataComplete) {
     startMetadataPolling(data.id);
@@ -367,6 +588,32 @@ collectionForm.addEventListener('submit', async event => {
     previewButton.disabled = false;
     previewButton.textContent = 'Показать карты';
   }
+});
+
+if (osuPathSave) {
+  osuPathSave.addEventListener('click', () => { void saveOsuSettings(true); });
+}
+if (osuPathInput) {
+  osuPathInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void saveOsuSettings(true);
+    }
+  });
+}
+if (osuRescan) {
+  osuRescan.addEventListener('click', () => { void rescanOsuSongs(); });
+}
+if (checkboxCheckExisting) {
+  checkboxCheckExisting.addEventListener('change', () => { void saveOsuSettings(false); });
+}
+postActionInputs.forEach(input => {
+  input.addEventListener('change', () => {
+    postActionInputs.forEach(i => {
+      byId(`option-action-${i.value}`)?.classList.toggle('selected', i.checked);
+    });
+    void saveOsuSettings(false);
+  });
 });
 
 sessionForm.addEventListener('submit', async event => {
@@ -935,6 +1182,7 @@ async function initialize() {
     api('/api/session'),
     loadOauthStatus(),
     loadMirrors(),
+    loadOsuSettings(),
   ]);
 
   if (sessionRes.status === 'fulfilled') {

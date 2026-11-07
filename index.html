@@ -295,6 +295,49 @@
         color: #ff94c2;
         background: #251622;
       }
+      .chip.chip-installed {
+        background: rgba(128, 221, 176, 0.15);
+        border-color: rgba(128, 221, 176, 0.4);
+        color: var(--green);
+      }
+      .chip.chip-downloads {
+        background: rgba(120, 180, 255, 0.15);
+        border-color: rgba(120, 180, 255, 0.4);
+        color: #9ac5ff;
+      }
+      .badge-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .badge-tag.tag-installed {
+        background: rgba(128, 221, 176, 0.15);
+        color: var(--green);
+        border: 1px solid rgba(128, 221, 176, 0.35);
+      }
+      .badge-tag.tag-downloaded {
+        background: rgba(120, 180, 255, 0.15);
+        color: #9ac5ff;
+        border: 1px solid rgba(120, 180, 255, 0.35);
+      }
+      .badge-tag.tag-new {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--muted);
+        border: 1px solid var(--line);
+      }
+      .map-item-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
       .map-list {
         list-style: none;
         border-top: 1px solid var(--line);
@@ -393,6 +436,50 @@
       }
       .method-option.locked {
         opacity: 0.5;
+      }
+      .extra-methods-details {
+        margin-top: 10px;
+        border: 1px dashed var(--line);
+        border-radius: 11px;
+        background: rgba(20, 20, 26, 0.45);
+        overflow: hidden;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .extra-methods-details[open] {
+        border-style: solid;
+        border-color: #3e3c4b;
+        background: rgba(20, 20, 26, 0.7);
+      }
+      .extra-methods-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 9px 13px;
+        font-size: 12px;
+        color: #9d99ab;
+        cursor: pointer;
+        user-select: none;
+        font-weight: 600;
+        list-style: none;
+      }
+      .extra-methods-summary::-webkit-details-marker {
+        display: none;
+      }
+      .extra-methods-summary:hover {
+        color: #f0edf4;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .extra-methods-summary .chevron {
+        transition: transform 0.2s ease;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .extra-methods-details[open] .extra-methods-summary .chevron {
+        transform: rotate(180deg);
+      }
+      .extra-methods-row {
+        margin-top: 0;
+        padding: 0 10px 10px;
       }
       .download-options {
         margin-top: 12px;
@@ -858,8 +945,102 @@
               </p>
           </section>
 
+          <section id="osu-card" class="card">
+            <h2>2. Интеграция с osu! Songs</h2>
+            <p class="hint">
+              Проверка имеющихся в игре карт и автоматическое перемещение или распаковка
+            </p>
+            <div class="field">
+              <label for="osu-path-input">Путь к папке игры osu! или Songs</label>
+              <div class="field-row">
+                <input
+                  id="osu-path-input"
+                  name="osuPath"
+                  type="text"
+                  placeholder="Например: D:\Games\osu! или D:\Games\osu!\Songs"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <button id="osu-path-save" type="button">Сохранить</button>
+              </div>
+            </div>
+            <div class="session-state">
+              <div class="session-label">
+                <span id="osu-dot" class="session-dot"></span>
+                <span id="osu-text">Проверка пути к osu!…</span>
+              </div>
+              <button id="osu-rescan" class="secondary" type="button">
+                Обновить список карт
+              </button>
+            </div>
+            <div id="osu-status" class="status" role="status" aria-live="polite"></div>
+
+            <div class="download-options" style="margin-top: 14px;">
+              <label class="checkbox-option" id="label-check-existing">
+                <input type="checkbox" id="checkbox-check-existing" checked />
+                <span>Проверять наличие в игре и пропускать уже имеющиеся наборы</span>
+              </label>
+            </div>
+
+            <div class="field" style="margin-top: 14px;">
+              <label>Что делать со скачанными картами:</label>
+              <div
+                class="method-row"
+                role="radiogroup"
+                aria-label="Действие со скачанными картами"
+              >
+                <label class="method-option" id="option-action-extract">
+                  <input
+                    type="radio"
+                    name="post-download-action"
+                    value="extract"
+                    id="action-extract"
+                  />
+                  <span>Распаковывать в Songs<small>создаёт папку карты прямо в игре</small></span>
+                </label>
+                <label class="method-option" id="option-action-none">
+                  <input
+                    type="radio"
+                    name="post-download-action"
+                    value="none"
+                    id="action-none"
+                    checked
+                  />
+                  <span>Оставлять в downloads/<small>без переноса в игру</small></span>
+                </label>
+              </div>
+
+              <details id="extra-actions-details" class="extra-methods-details">
+                <summary class="extra-methods-summary">
+                  <span>Дополнительные методы (.osz в Songs)</span>
+                  <span class="chevron" aria-hidden="true">▾</span>
+                </summary>
+                <div class="method-row extra-methods-row">
+                  <label class="method-option" id="option-action-move">
+                    <input
+                      type="radio"
+                      name="post-download-action"
+                      value="move"
+                      id="action-move"
+                    />
+                    <span>Перемещать .osz в Songs<small>osu! импортирует при открытии или по F5</small></span>
+                  </label>
+                  <label class="method-option" id="option-action-copy">
+                    <input
+                      type="radio"
+                      name="post-download-action"
+                      value="copy"
+                      id="action-copy"
+                    />
+                    <span>Копировать .osz в Songs<small>сохранять копию и в downloads/</small></span>
+                  </label>
+                </div>
+              </details>
+            </div>
+          </section>
+
           <section class="card">
-            <h2>2. Cookie osu_session — резервный способ</h2>
+            <h2>3. Cookie osu_session — резервный способ</h2>
             <p class="hint">
               Нужна, только если зеркала не отдают нужный набор
             </p>
@@ -904,7 +1085,7 @@
           </section>
 
           <section class="card">
-            <h2>3. Скачивание</h2>
+            <h2>4. Скачивание</h2>
             <p class="hint">
               Файлы берутся с зеркал osu! — без cookie и без входа в аккаунт
             </p>
