@@ -84,6 +84,10 @@ const {
   getFailedSetIds,
   launchJob,
   pruneJobs,
+  getStateFilePath,
+  saveStateToDisk,
+  loadStateFromDisk,
+  scheduleSaveState,
 } = require('./lib/jobs.js');
 
 const {
@@ -378,6 +382,7 @@ async function handleApi(req, res, url) {
 
     log('info', 'download.job.created', { jobId: job.id, method, noVideo, mirrors: method === 'mirror' ? MIRRORS.map(mirror => mirror.id) : undefined, collectionId, collectionName: job.collectionName, total: setIds.length });
     launchJob(job, auth);
+    void scheduleSaveState(true);
     return json(res, 202, safeJobForClient(job));
   }
 
@@ -503,6 +508,14 @@ async function resolveJobAuth(req, job) {
     return json(res, 202, safeJobForClient(job));
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/downloads/active') {
+    const active = getActiveJob();
+    if (!active) {
+      return json(res, 404, { error: 'Нет активной загрузки.' });
+    }
+    return json(res, 200, safeJobForClient(active));
+  }
+
   const eventsMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/events$/);
   if (req.method === 'GET' && (eventsMatch || url.pathname === '/api/downloads/events')) {
     const targetId = eventsMatch ? eventsMatch[1] : (url.searchParams.get('id') || getActiveJob()?.id);
@@ -586,6 +599,7 @@ async function resolveJobAuth(req, job) {
       job.finishedAt = Date.now();
       if (getActiveJob() === job) setActiveJob(null);
       emitJobUpdate(job, true);
+      void scheduleSaveState(true);
       log('warn', 'download.job.cancelled', { jobId: job.id, completed: jobCounters(job).completed, total: job.setIds.length });
       void cleanupJobPartFiles(job);
     }
@@ -665,6 +679,7 @@ setInterval(() => {
 async function bootstrapAfterListen() {
   await fs.promises.mkdir(getDownloadsDir(), { recursive: true });
   await cleanupStalePartFiles();
+  await loadStateFromDisk();
 }
 
 if (require.main === module) {
@@ -700,9 +715,15 @@ if (require.main === module) {
       for (const token of sessions.keys()) sessions.delete(token);
       oauthStates.clear();
       for (const job of jobs.values()) {
+        if (['queued', 'running'].includes(job.status)) {
+          job.status = 'paused';
+          job.message = 'Сервер остановлен — задача приостановлена. Нажмите «Продолжить» при следующем запуске.';
+          job.pausedAt = Date.now();
+        }
         job.abortController?.abort();
         clearAutoResume(job);
       }
+      await saveStateToDisk().catch(() => {});
       await cleanupStalePartFiles().catch(() => {});
       server.closeIdleConnections?.();
       server.close(() => process.exit(0));
@@ -750,4 +771,9 @@ module.exports = {
   sessions,
   oauthStates,
   HttpError,
+  loadStateFromDisk,
+  saveStateToDisk,
+  scheduleSaveState,
+  getStateFilePath,
+  bootstrapAfterListen,
 };

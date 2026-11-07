@@ -5,6 +5,8 @@ node_modules/
 downloads/
 *.osz
 *.part
+*.tmp
+.state.json
 
 # Runtime and logs
 server.pid

@@ -852,18 +852,35 @@ byId('oauth-disconnect').addEventListener('click', async () => {
   }
 });
 
-// Реактивация задачи после перезагрузки страницы: jobId живёт в localStorage.
+// Реактивация задачи после перезагрузки страницы: jobId живёт в localStorage или запрашивается с сервера.
 async function restoreJob() {
   let storedId = null;
   try {
     storedId = localStorage.getItem(JOB_STORAGE_KEY);
   } catch {}
+  if (!storedId) {
+    try {
+      const active = await api('/api/downloads/active');
+      if (active?.id) {
+        storedId = active.id;
+        persistJobId(storedId);
+      }
+    } catch {}
+  }
   if (!storedId) return;
   try {
     const job = await api(`/api/downloads/${storedId}`);
-    if (['queued', 'running'].includes(job.status) || (job.status === 'paused')) {
+    if (['queued', 'running'].includes(job.status)) {
       startJobPolling(job.id);
       updateJob(job);
+    } else if (job.status === 'paused') {
+      progressWrap.classList.add('visible');
+      updateJob(job);
+      if (Number.isFinite(job.autoResumeAt)) {
+        startJobPolling(job.id);
+      } else {
+        finishJob(job);
+      }
     } else {
       persistJobId(null);
       progressWrap.classList.add('visible');
