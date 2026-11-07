@@ -72,6 +72,8 @@ const {
 
 const {
   jobs,
+  jobEvents,
+  emitJobUpdate,
   getActiveJob,
   setActiveJob,
   jobCounters,
@@ -501,6 +503,71 @@ async function resolveJobAuth(req, job) {
     return json(res, 202, safeJobForClient(job));
   }
 
+  const eventsMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/events$/);
+  if (req.method === 'GET' && (eventsMatch || url.pathname === '/api/downloads/events')) {
+    const targetId = eventsMatch ? eventsMatch[1] : (url.searchParams.get('id') || getActiveJob()?.id);
+    if (!targetId) {
+      return json(res, 400, { error: 'Не указан идентификатор загрузки.' });
+    }
+    const job = jobs.get(targetId);
+    if (!job) {
+      return json(res, 404, { error: 'Загрузка не найдена.' });
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    res.write(`retry: 1500\n\ndata: ${JSON.stringify(safeJobForClient(job))}\n\n`);
+
+    /** @param {any} updatedJob */
+    const onJobUpdate = (updatedJob) => {
+      if (res.writableEnded || res.destroyed) return;
+      try {
+        res.write(`data: ${JSON.stringify(safeJobForClient(updatedJob))}\n\n`);
+      } catch {}
+      if (['finished', 'finished_with_errors', 'cancelled'].includes(updatedJob.status)) {
+        setTimeout(() => {
+          if (!res.writableEnded && !res.destroyed) {
+            res.end();
+          }
+        }, 1000);
+      }
+    };
+
+    jobEvents.on(`job:${job.id}`, onJobUpdate);
+
+    const timer = setInterval(() => {
+      if (res.writableEnded || res.destroyed) {
+        clearInterval(timer);
+        return;
+      }
+      try {
+        const hasCooldowns = MIRRORS.some(m => mirrorCooldownRemaining(m) > 0);
+        if (job.status === 'paused' || hasCooldowns) {
+          res.write(`data: ${JSON.stringify(safeJobForClient(job))}\n\n`);
+        } else {
+          res.write(': ping\n\n');
+        }
+      } catch {
+        clearInterval(timer);
+      }
+    }, 1000);
+    timer.unref();
+
+    const cleanup = () => {
+      clearInterval(timer);
+      jobEvents.off(`job:${job.id}`, onJobUpdate);
+    };
+
+    req.on('close', cleanup);
+    res.on('close', cleanup);
+    return;
+  }
+
   const jobMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)(?:\/cancel)?$/);
   if (req.method === 'GET' && jobMatch && !url.pathname.endsWith('/cancel')) {
     const job = jobs.get(jobMatch[1]);
@@ -518,6 +585,7 @@ async function resolveJobAuth(req, job) {
       job.message = 'Загрузка остановлена.';
       job.finishedAt = Date.now();
       if (getActiveJob() === job) setActiveJob(null);
+      emitJobUpdate(job, true);
       log('warn', 'download.job.cancelled', { jobId: job.id, completed: jobCounters(job).completed, total: job.setIds.length });
       void cleanupJobPartFiles(job);
     }
@@ -676,6 +744,8 @@ module.exports = {
   appendNoVideo,
   retryFailedJob,
   getFailedSetIds,
+  jobEvents,
+  emitJobUpdate,
   jobs,
   sessions,
   oauthStates,

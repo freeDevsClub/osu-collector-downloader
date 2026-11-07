@@ -65,6 +65,8 @@ let collection = null;
 let activeJob = null;
 let pausedJob = null;
 let lastJobId = null;
+/** @type {EventSource | null} */
+let jobEventSource = null;
 let pollTimer = null;
 let pollInFlight = false;
 let pollFailures = 0;
@@ -451,6 +453,15 @@ function persistJobId(id) {
   } catch {}
 }
 
+function stopJobStream() {
+  if (jobEventSource) {
+    jobEventSource.onmessage = null;
+    jobEventSource.onerror = null;
+    jobEventSource.close();
+    jobEventSource = null;
+  }
+}
+
 function startJobPolling(id) {
   activeJob = id;
   pausedJob = null;
@@ -460,6 +471,48 @@ function startJobPolling(id) {
   resumeButton.hidden = true;
   if (retryFailedButton) retryFailedButton.hidden = true;
   progressWrap.classList.add('visible');
+
+  stopPolling();
+  stopJobStream();
+
+  if (typeof window.EventSource === 'function') {
+    try {
+      const es = new EventSource(`/api/downloads/${id}/events`);
+      jobEventSource = es;
+
+      es.onmessage = event => {
+        try {
+          const job = JSON.parse(event.data);
+          pollFailures = 0;
+          updateJob(job);
+          const autoResuming = job.status === 'paused' && Number.isFinite(job.autoResumeAt);
+          if (autoResuming) {
+            pausedJob = null;
+            resumeButton.hidden = true;
+            cancelButton.hidden = false;
+            return;
+          }
+          if (!['queued', 'running'].includes(job.status)) {
+            stopJobStream();
+            finishJob(job);
+          }
+        } catch {}
+      };
+
+      es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) {
+          stopJobStream();
+          if (activeJob) {
+            scheduleNextPoll(1000);
+          }
+        }
+      };
+      return;
+    } catch {
+      stopJobStream();
+    }
+  }
+
   scheduleNextPoll(0);
 }
 
@@ -644,6 +697,7 @@ function hasActiveCooldowns() {
 }
 
 function finishJob(job, errorMessage = '') {
+  stopJobStream();
   stopPolling();
   activeJob = null;
   if (job?.id) lastJobId = job.id;
