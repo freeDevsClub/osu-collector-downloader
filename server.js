@@ -416,8 +416,10 @@ async function handleApi(req, res, url) {
     jobs.set(job.id, job);
 
     try {
-      const requiredBytes = await estimateRequiredDiskSpace(setIds, noVideo);
-      await ensureDiskSpace(requiredBytes);
+      const requiredBytes = await estimateRequiredDiskSpace(setIds, noVideo, { job });
+      if (requiredBytes > 0) {
+        await ensureDiskSpace(requiredBytes);
+      }
     } catch (error) {
       jobs.delete(job.id);
       if (getActiveJob() === job) setActiveJob(null);
@@ -484,8 +486,11 @@ async function resolveJobAuth(req, job) {
       }
     }
     try {
-      const requiredBytes = await estimateRequiredDiskSpace(job.setIds, job.noVideo);
-      await ensureDiskSpace(requiredBytes);
+      const pendingIds = job.setIds.filter(id => !job.doneIds?.has(id) && !job.skipIds?.has(id));
+      const requiredBytes = await estimateRequiredDiskSpace(pendingIds, job.noVideo, { job });
+      if (requiredBytes > 0) {
+        await ensureDiskSpace(requiredBytes);
+      }
     } catch (error) {
       if (error instanceof HttpError) return json(res, error.httpStatus, { error: error.message });
       return json(res, 507, { error: safeErrorMessage(error) });
@@ -540,8 +545,10 @@ async function resolveJobAuth(req, job) {
     }
 
     try {
-      const requiredBytes = await estimateRequiredDiskSpace(failedIds, job.noVideo);
-      await ensureDiskSpace(requiredBytes);
+      const requiredBytes = await estimateRequiredDiskSpace(failedIds, job.noVideo, { job });
+      if (requiredBytes > 0) {
+        await ensureDiskSpace(requiredBytes);
+      }
     } catch (spaceError) {
       if (spaceError instanceof HttpError) return json(res, spaceError.httpStatus, { error: spaceError.message });
       return json(res, 507, { error: safeErrorMessage(spaceError) });
