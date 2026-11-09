@@ -1,0 +1,190 @@
+"use strict";
+
+const { describe, it, before, after, beforeEach } = require('node:test');
+const assert = require('node:assert/strict');
+const http = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+
+const {
+  jobs,
+  getActiveJob,
+  setActiveJob,
+  jobCounters,
+} = require('../lib/jobs.js');
+
+const { server } = require('../server.js');
+
+describe('Отмена задач и обработчик POST /api/downloads/:id/cancel', () => {
+  let appServer;
+  let appPort;
+  let tempDir;
+
+  before(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cancel-test-'));
+    process.env.DOWNLOADS_DIR = tempDir;
+
+    appServer = server.listen(0, '127.0.0.1');
+    await new Promise(resolve => appServer.once('listening', resolve));
+    appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
+  });
+
+  after(async () => {
+    if (appServer) {
+      await new Promise(resolve => appServer.close(resolve));
+    }
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } catch {}
+  });
+
+  beforeEach(() => {
+    jobs.clear();
+    setActiveJob(null);
+  });
+
+  async function postCancel(jobId) {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        `http://127.0.0.1:${appPort}/api/downloads/${jobId}/cancel`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+        res => {
+          let body = '';
+          res.on('data', chunk => { body += chunk; });
+          res.on('end', () => {
+            try {
+              resolve({ status: res.statusCode, data: JSON.parse(body) });
+            } catch {
+              resolve({ status: res.statusCode, text: body });
+            }
+          });
+        }
+      );
+      req.on('error', reject);
+      req.end('{}');
+    });
+  }
+
+  it('успешно отменяет задачу со статусом finished_with_errors и deferred > 0', async () => {
+    const job = {
+      id: 'a1b2c3d4e5f67890123456789abcdef0',
+      method: 'mirror',
+      noVideo: false,
+      collectionId: '123',
+      collectionName: 'Test Deferred Cancel',
+      setIds: [1, 2, 3],
+      doneIds: new Set([1]),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      extraFailures: 0,
+      mapsById: new Map(),
+      status: 'finished_with_errors',
+      message: 'Загрузка завершена с отложенными наборами',
+    };
+    jobs.set(job.id, job);
+    setActiveJob(job);
+
+    const initialCounters = jobCounters(job);
+    assert.equal(initialCounters.deferred, 2);
+
+    const res = await postCancel(job.id);
+    assert.equal(res.status, 200);
+    assert.equal(res.data.status, 'cancelled');
+    assert.equal(res.data.message, 'Загрузка остановлена.');
+    assert.equal(job.status, 'cancelled');
+    assert.equal(getActiveJob(), null, 'activeJob должен быть сброшен в null');
+    assert.ok(typeof job.finishedAt === 'number');
+  });
+
+  it('успешно отменяет задачу в статусе paused', async () => {
+    const job = {
+      id: 'b1b2c3d4e5f67890123456789abcdef1',
+      method: 'mirror',
+      noVideo: false,
+      collectionId: '124',
+      collectionName: 'Test Paused Cancel',
+      setIds: [1, 2],
+      doneIds: new Set(),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      extraFailures: 0,
+      mapsById: new Map(),
+      status: 'paused',
+      message: 'Зеркала остывают',
+    };
+    jobs.set(job.id, job);
+    setActiveJob(job);
+
+    const res = await postCancel(job.id);
+    assert.equal(res.status, 200);
+    assert.equal(res.data.status, 'cancelled');
+    assert.equal(job.status, 'cancelled');
+    assert.equal(getActiveJob(), null);
+  });
+
+  it('успешно отменяет задачу в статусе running', async () => {
+    let aborted = false;
+    const abortController = new AbortController();
+    abortController.signal.addEventListener('abort', () => { aborted = true; });
+
+    const job = {
+      id: 'c1b2c3d4e5f67890123456789abcdef2',
+      method: 'mirror',
+      noVideo: false,
+      collectionId: '125',
+      collectionName: 'Test Running Cancel',
+      setIds: [1, 2],
+      doneIds: new Set(),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      extraFailures: 0,
+      mapsById: new Map(),
+      status: 'running',
+      message: 'Скачивание...',
+      abortController,
+    };
+    jobs.set(job.id, job);
+    setActiveJob(job);
+
+    const res = await postCancel(job.id);
+    assert.equal(res.status, 200);
+    assert.equal(res.data.status, 'cancelled');
+    assert.equal(job.status, 'cancelled');
+    assert.equal(aborted, true, 'AbortSignal должен быть активирован');
+    assert.equal(getActiveJob(), null);
+  });
+
+  it('возвращает 404 при попытке отменить несуществующую задачу', async () => {
+    const res = await postCancel('deadbeef1234567890abcdef12345678');
+    assert.equal(res.status, 404);
+    assert.ok(/не найдена/i.test(res.data.error));
+  });
+
+  it('идемпотентно обрабатывает повторную отмену уже отменённой задачи', async () => {
+    const job = {
+      id: 'd1b2c3d4e5f67890123456789abcdef3',
+      method: 'mirror',
+      noVideo: false,
+      collectionId: '126',
+      collectionName: 'Already Cancelled',
+      setIds: [1],
+      doneIds: new Set(),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      extraFailures: 0,
+      mapsById: new Map(),
+      status: 'cancelled',
+      message: 'Загрузка остановлена.',
+    };
+    jobs.set(job.id, job);
+
+    const res = await postCancel(job.id);
+    assert.equal(res.status, 200);
+    assert.equal(res.data.status, 'cancelled');
+  });
+});

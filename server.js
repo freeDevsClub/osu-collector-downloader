@@ -642,7 +642,7 @@ async function resolveJobAuth(req, job) {
   if (req.method === 'POST' && jobMatch && url.pathname.endsWith('/cancel')) {
     const job = jobs.get(jobMatch[1]);
     if (!job) return json(res, 404, { error: 'Загрузка не найдена.' });
-    if (['running', 'queued', 'paused'].includes(job.status)) {
+    if (['running', 'queued', 'paused', 'finished_with_errors'].includes(job.status)) {
       job.status = 'cancelled';
       clearAutoResume(job);
       job.abortController?.abort();

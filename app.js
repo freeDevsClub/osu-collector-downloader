@@ -1037,6 +1037,7 @@ cancelButton.addEventListener('click', async () => {
   cancelButton.disabled = true;
   try {
     const job = await api(`/api/downloads/${targetId}/cancel`, { method: 'POST', body: '{}' });
+    updateJob(job);
     finishJob(job);
   } catch (rawError) {
     notify(toAny(rawError).message);
