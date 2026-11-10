@@ -244,6 +244,63 @@ describe('Интеграция с локальной директорией osu!
     assert.equal(await fs.promises.readFile(dst, 'utf8'), 'content to move');
   });
 
+  test('saveSettings поддерживает частичные обновления без rescan папки Songs', async () => {
+    // Устанавливаем базовые валидные настройки
+    const base = await saveSettings({
+      osuPath: mockSongsDir,
+      checkExisting: true,
+      postDownloadAction: 'none',
+    });
+    assert.equal(base.valid, true);
+    assert.equal(base.checkExisting, true);
+    assert.equal(base.postDownloadAction, 'none');
+    assert.equal(base.songsCount >= 4, true);
+
+    // Подменяем fs.readdirSync чтобы проверить отсутствие лишнего вызова при частичном апдейте
+    let readdirSyncCalls = 0;
+    const originalReaddirSync = fs.readdirSync;
+    // @ts-ignore
+    fs.readdirSync = (dirPath, opts) => {
+      readdirSyncCalls++;
+      // @ts-ignore
+      return originalReaddirSync(dirPath, opts);
+    };
+
+    try {
+      // 1. Частичный апдейт: только checkExisting
+      const updatedCheck = await saveSettings({ checkExisting: false });
+      assert.equal(updatedCheck.checkExisting, false);
+      assert.equal(updatedCheck.postDownloadAction, 'none');
+      assert.equal(updatedCheck.valid, true);
+      assert.equal(updatedCheck.osuPath, base.osuPath);
+      assert.equal(updatedCheck.songsDir, base.songsDir);
+      assert.equal(updatedCheck.songsCount, base.songsCount);
+      assert.equal(readdirSyncCalls, 0, 'fs.readdirSync не должен вызываться при неизменном пути');
+
+      // 2. Частичный апдейт: только postDownloadAction
+      const updatedAction = await saveSettings({ postDownloadAction: 'move' });
+      assert.equal(updatedAction.postDownloadAction, 'move');
+      assert.equal(updatedAction.checkExisting, false);
+      assert.equal(updatedAction.valid, true);
+      assert.equal(readdirSyncCalls, 0, 'fs.readdirSync не должен вызываться при неизменном пути');
+
+      // 3. Апдейт с тем же самым osuPath не должен принудительно пересканировать диск
+      const samePath = await saveSettings({ osuPath: mockSongsDir });
+      assert.equal(samePath.valid, true);
+      assert.equal(readdirSyncCalls, 0, 'fs.readdirSync не должен вызываться при повторной передаче того же пути');
+    } finally {
+      fs.readdirSync = originalReaddirSync;
+    }
+
+    // 4. Попытка передать невалидный osuPath выбрасывает ошибку
+    await assert.rejects(
+      async () => {
+        await saveSettings({ osuPath: path.join(tempBaseDir, 'non_existent_osu_dir_xyz') });
+      },
+      /Директория Songs не найдена/
+    );
+  });
+
   test('handlePostDownload: режим move перемещает .osz в Songs', async () => {
     const originalDownloads = process.env.DOWNLOADS_DIR;
     process.env.DOWNLOADS_DIR = mockDownloadsDir;
@@ -452,6 +509,23 @@ describe('Интеграция с локальной директорией osu!
       assert.equal(postBody.valid, true);
       assert.equal(postBody.songsCount >= 4, true);
       assert.equal(postBody.postDownloadAction, 'move');
+
+      // 2a. POST /api/osu/settings частичное обновление без osuPath
+      const partialRes = await fetch(`http://127.0.0.1:${testPort}/api/osu/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkExisting: false,
+          postDownloadAction: 'copy',
+        }),
+      });
+      assert.equal(partialRes.status, 200);
+      const partialBody = await partialRes.json();
+      assert.equal(partialBody.checkExisting, false);
+      assert.equal(partialBody.postDownloadAction, 'copy');
+      assert.equal(partialBody.valid, true);
+      assert.equal(partialBody.songsDir, mockSongsDir);
+      assert.equal(partialBody.songsCount >= 4, true);
 
       // 3. POST /api/osu/settings с невалидным путем
       const badRes = await fetch(`http://127.0.0.1:${testPort}/api/osu/settings`, {

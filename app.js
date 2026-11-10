@@ -196,7 +196,7 @@ function renderSessionState(connected) {
   updateDownloadButton();
 }
 
-function renderOsuSettings(settings) {
+function renderOsuSettings(settings, updateInput = true) {
   osuSettings = {
     osuPath: settings?.osuPath || '',
     songsDir: settings?.songsDir || null,
@@ -208,7 +208,7 @@ function renderOsuSettings(settings) {
       : 'none',
   };
 
-  if (osuPathInput && document.activeElement !== osuPathInput) {
+  if (updateInput && osuPathInput && document.activeElement !== osuPathInput) {
     osuPathInput.value = osuSettings.osuPath;
   }
   if (checkboxCheckExisting) {
@@ -249,33 +249,66 @@ async function loadOsuSettings() {
   }
 }
 
-async function saveOsuSettings(showToast = true) {
-  const osuPath = osuPathInput ? osuPathInput.value.trim() : osuSettings.osuPath;
-  const checkExisting = checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting;
-  const postDownloadAction = postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction;
+/**
+ * @param {boolean | { osuPath?: string, checkExisting?: boolean, postDownloadAction?: string }} [patchOrToast=true]
+ * @param {boolean} [maybeToast]
+ */
+async function saveOsuSettings(patchOrToast = true, maybeToast) {
+  /** @type {{ osuPath?: string, checkExisting?: boolean, postDownloadAction?: string }} */
+  let patch = {};
+  let showToast = true;
 
-  if (osuPathSave) osuPathSave.disabled = true;
-  setStatus(osuStatus, 'Сохраняю настройки osu!…');
+  if (typeof patchOrToast === 'object' && patchOrToast !== null) {
+    patch = patchOrToast;
+    showToast = maybeToast !== undefined ? Boolean(maybeToast) : false;
+  } else {
+    showToast = Boolean(patchOrToast);
+    patch = {
+      osuPath: osuPathInput ? osuPathInput.value.trim() : osuSettings.osuPath,
+      checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
+      postDownloadAction: postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction,
+    };
+  }
+
+  const isPathUpdate = patch.osuPath !== undefined;
+
+  if (isPathUpdate && osuPathSave) osuPathSave.disabled = true;
+  setStatus(osuStatus, isPathUpdate ? 'Сохраняю настройки osu!…' : 'Обновляю настройки…');
   try {
     const data = await api('/api/osu/settings', {
       method: 'POST',
-      body: JSON.stringify({ osuPath, checkExisting, postDownloadAction }),
+      body: JSON.stringify(patch),
     });
-    renderOsuSettings(data);
-    if (data.valid) {
-      setStatus(osuStatus, `Настройки сохранены. Найдено ${data.songsCount} наборов карт в osu! Songs.`, 'success');
-      if (showToast) notify(`osu! Songs подключена (${data.songsCount} наборов).`);
+    renderOsuSettings(data, isPathUpdate);
+    if (isPathUpdate) {
+      if (data.valid) {
+        setStatus(osuStatus, `Настройки сохранены. Найдено ${data.songsCount} наборов карт в osu! Songs.`, 'success');
+        if (showToast) notify(`osu! Songs подключена (${data.songsCount} наборов).`);
+      } else {
+        setStatus(osuStatus, 'Путь сохранён (папка osu! отключена).', '');
+        if (showToast) notify('Настройки osu! обновлены.');
+      }
     } else {
-      setStatus(osuStatus, 'Путь сохранён (папка osu! отключена).', '');
-      if (showToast) notify('Настройки osu! обновлены.');
+      setStatus(osuStatus, 'Настройки osu! сохранены.', 'success');
+      if (showToast) notify('Настройки osu! сохранены.');
     }
     await recheckCollectionOsu();
   } catch (err) {
+    if (!isPathUpdate) {
+      if (checkboxCheckExisting) {
+        checkboxCheckExisting.checked = osuSettings.checkExisting;
+      }
+      postActionInputs.forEach(input => {
+        input.checked = input.value === osuSettings.postDownloadAction;
+        const option = byId(`option-action-${input.value}`);
+        option?.classList.toggle('selected', input.checked);
+      });
+    }
     const message = toAny(err).message;
     setStatus(osuStatus, message, 'error');
     if (showToast) notify(`Ошибка: ${message}`);
   } finally {
-    if (osuPathSave) osuPathSave.disabled = false;
+    if (isPathUpdate && osuPathSave) osuPathSave.disabled = false;
   }
 }
 
@@ -285,7 +318,7 @@ async function rescanOsuSongs() {
   try {
     const data = await api('/api/osu/rescan', { method: 'POST' });
     osuSettings.songsCount = Number(data.count || 0);
-    renderOsuSettings(osuSettings);
+    renderOsuSettings(osuSettings, false);
     setStatus(osuStatus, `Сканирование завершено: найдено ${data.count} наборов карт.`, 'success');
     notify(`Найдено ${data.count} наборов карт в osu! Songs.`);
     await recheckCollectionOsu();
@@ -591,13 +624,17 @@ collectionForm.addEventListener('submit', async event => {
 });
 
 if (osuPathSave) {
-  osuPathSave.addEventListener('click', () => { void saveOsuSettings(true); });
+  osuPathSave.addEventListener('click', () => {
+    const osuPath = osuPathInput ? osuPathInput.value.trim() : '';
+    void saveOsuSettings({ osuPath }, true);
+  });
 }
 if (osuPathInput) {
   osuPathInput.addEventListener('keydown', event => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      void saveOsuSettings(true);
+      const osuPath = osuPathInput.value.trim();
+      void saveOsuSettings({ osuPath }, true);
     }
   });
 }
@@ -605,14 +642,16 @@ if (osuRescan) {
   osuRescan.addEventListener('click', () => { void rescanOsuSongs(); });
 }
 if (checkboxCheckExisting) {
-  checkboxCheckExisting.addEventListener('change', () => { void saveOsuSettings(false); });
+  checkboxCheckExisting.addEventListener('change', () => {
+    void saveOsuSettings({ checkExisting: checkboxCheckExisting.checked }, false);
+  });
 }
 postActionInputs.forEach(input => {
   input.addEventListener('change', () => {
     postActionInputs.forEach(i => {
       byId(`option-action-${i.value}`)?.classList.toggle('selected', i.checked);
     });
-    void saveOsuSettings(false);
+    void saveOsuSettings({ postDownloadAction: input.value }, false);
   });
 });
 
