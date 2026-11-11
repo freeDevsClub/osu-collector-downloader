@@ -232,6 +232,45 @@ describe('Worker Pool и per-mirror concurrency', () => {
     assert.ok(clientJob.currentSetName.includes('2 набора параллельно'));
   });
 
+  it('параллельные воркеры изолируют прогресс и сброс одного воркера не обнуляет прогресс остальных', () => {
+    const job = {
+      id: 'job_race_isolation',
+      method: 'mirror',
+      collectionName: 'Parallel Coll',
+      setIds: [101, 102],
+      doneIds: new Set(),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      mapsById: new Map([
+        [101, { label: 'Map 101' }],
+        [102, { label: 'Map 102' }],
+      ]),
+      activeTransfers: new Map([
+        [101, { setId: 101, setName: 'Map 101', mirror: 'm1', bytes: 50000000, totalBytes: 50000000 }],
+        [102, { setId: 102, setName: 'Map 102', mirror: 'm2', bytes: 1000000, totalBytes: 10000000 }],
+      ]),
+      status: 'running',
+      message: 'Загрузка beatmap-наборов…',
+    };
+
+    let client = safeJobForClient(job);
+    assert.equal(client.currentBytes, 51000000);
+    assert.equal(client.currentTotalBytes, 60000000);
+    assert.equal(client.currentPercent, 85);
+
+    // Воркер 102 сталкивается со сбросом / ошибкой зеркала (сбрасывает bytes в 0)
+    const t2 = job.activeTransfers.get(102);
+    t2.bytes = 0;
+    t2.totalBytes = null;
+
+    // safeJobForClient сохраняет прогресс от воркера 101 без обнуления в 0%
+    client = safeJobForClient(job);
+    assert.equal(client.currentBytes, 50000000);
+    assert.equal(client.currentPercent, 100);
+    assert.equal(client.status, 'running');
+  });
+
   it('выбирает свободное зеркало вместо блокировки на занятом зеркале', async () => {
     MIRRORS.length = 0;
     MIRRORS.push(
