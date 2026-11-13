@@ -143,6 +143,7 @@ function updateDownloadButton() {
     checkboxNoVideo.disabled = Boolean(activeJob);
   }
   methodInputs.forEach(input => {
+    input.disabled = Boolean(activeJob);
     const option = byId(`option-${input.value}`);
     option?.classList.toggle('selected', input.checked);
     option?.classList.toggle('locked', !methodReady(input.value));
@@ -581,7 +582,7 @@ function renderCollection(data) {
 
   const installedCount = data.installedSetIds?.length || 0;
   if (installedCount === data.count && data.count > 0) {
-    setStatus(collectionStatus, `Все ${data.count} наборов карт из этой коллекции уже есть в osu! Songs 👍`, 'success');
+    setStatus(collectionStatus, `Все ${data.count} наборов карт из этой коллекции уже есть в osu! Songs.`, 'success');
   } else if (installedCount > 0) {
     setStatus(collectionStatus, `Найдено ${data.count} наборов (${installedCount} уже в osu!, ${data.count - installedCount} новых).`, 'success');
   } else {
@@ -912,6 +913,13 @@ function updateJob(job) {
   if (checkboxNoVideo && typeof job.noVideo === 'boolean' && activeJob) {
     checkboxNoVideo.checked = job.noVideo;
   }
+  if (job?.method && activeJob) {
+    const targetInput = methodInputs.find(input => input.value === job.method);
+    if (targetInput && !targetInput.checked) {
+      targetInput.checked = true;
+      updateDownloadButton();
+    }
+  }
   if (retryFailedButton) {
     const isRunning = ['queued', 'running'].includes(job.status);
     const canRetry = Boolean(!isRunning && (job.canRetryFailed ?? (job.failed > 0)));
@@ -1070,9 +1078,18 @@ function finishJob(job, errorMessage = '') {
 
 resumeButton.addEventListener('click', async () => {
   if (!pausedJob) return;
+  const method = selectedMethod();
+  if (!methodReady(method)) {
+    setStatus(downloadStatus, method === 'oauth' ? 'Сначала подключите OAuth-приложение и войдите через osu!.' : 'Сначала сохраните cookie osu_session.', 'error');
+    return;
+  }
   resumeButton.disabled = true;
   try {
-    const job = await api(`/api/downloads/${pausedJob}/resume`, { method: 'POST', body: '{}' });
+    const noVideo = Boolean(checkboxNoVideo?.checked);
+    const job = await api(`/api/downloads/${pausedJob}/resume?method=${method}${noVideo ? '&noVideo=1' : ''}`, {
+      method: 'POST',
+      body: JSON.stringify({ method, noVideo }),
+    });
     startJobPolling(job.id);
     updateJob(job);
     void loadMirrors();
