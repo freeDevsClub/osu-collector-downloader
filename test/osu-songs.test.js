@@ -228,9 +228,12 @@ describe('Интеграция с локальной директорией osu!
   let mockSongsDir;
   let mockDownloadsDir;
   let originalDownloadsEnv;
+  let originalNodeEnv;
 
   before(async () => {
     originalDownloadsEnv = process.env.DOWNLOADS_DIR;
+    originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
     tempBaseDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'osu-songs-test-'));
     mockSongsDir = path.join(tempBaseDir, 'Songs');
     mockDownloadsDir = path.join(tempBaseDir, 'downloads');
@@ -242,12 +245,17 @@ describe('Интеграция с локальной директорией osu!
     await fs.promises.mkdir(path.join(mockSongsDir, '10001 Artist - Title One'), { recursive: true });
     await fs.promises.mkdir(path.join(mockSongsDir, '10002'), { recursive: true });
     await fs.promises.mkdir(path.join(mockSongsDir, '10003 Complex (Name) [Hard]'), { recursive: true });
+    await fs.promises.writeFile(path.join(mockSongsDir, '10003 Complex (Name) [Hard]', 'map.osu'), 'osu file');
     // Создаем файл .osz в Songs
     await fs.promises.writeFile(path.join(mockSongsDir, '10004.osz'), Buffer.from('mock'));
     // Не-числовые папки и файлы, которые должны игнорироваться
     await fs.promises.mkdir(path.join(mockSongsDir, 'Failed'), { recursive: true });
     await fs.promises.mkdir(path.join(mockSongsDir, 'Skins'), { recursive: true });
     await fs.promises.writeFile(path.join(mockSongsDir, 'readme.txt'), 'notes');
+    // Проверка ложных срабатываний: пользовательская папка без .osu и текстовые файлы с цифрами
+    await fs.promises.mkdir(path.join(mockSongsDir, '2024 favorites'), { recursive: true });
+    await fs.promises.writeFile(path.join(mockSongsDir, '1000 notes.txt'), 'notes');
+    await fs.promises.writeFile(path.join(mockSongsDir, '999.bak'), 'backup');
   });
 
   after(async () => {
@@ -255,6 +263,11 @@ describe('Интеграция с локальной директорией osu!
       process.env.DOWNLOADS_DIR = originalDownloadsEnv;
     } else {
       delete process.env.DOWNLOADS_DIR;
+    }
+    if (originalNodeEnv !== undefined) {
+      process.env.NODE_ENV = originalNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
     }
     invalidateCachedSongs();
     loadSettings();
@@ -287,7 +300,7 @@ describe('Интеграция с локальной директорией osu!
     }
   });
 
-  test('scanOsuSongsSync извлекает верные ID наборов карт и игнорирует нечисловые файлы', () => {
+  test('scanOsuSongsSync извлекает верные ID наборов карт и игнорирует нечисловые файлы и пользовательские папки', () => {
     const setIds = scanOsuSongsSync(mockSongsDir);
     assert.equal(setIds.has(10001), true);
     assert.equal(setIds.has(10002), true);
@@ -296,6 +309,10 @@ describe('Интеграция с локальной директорией osu!
     assert.equal(setIds.has(99999), false);
     // Проверяем, что не создались NaN или 0
     assert.equal(setIds.has(0), false);
+    // Проверяем защиту от ложных срабатываний (issue 6)
+    assert.equal(setIds.has(2024), false, 'Папка 2024 favorites без .osu файлов не должна считаться картой');
+    assert.equal(setIds.has(1000), false, 'Файл 1000 notes.txt без расширения .osz не должен считаться картой');
+    assert.equal(setIds.has(999), false, 'Файл 999.bak не должен считаться картой');
     assert.equal(setIds.size, 4);
   });
 

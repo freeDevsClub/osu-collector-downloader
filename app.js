@@ -231,7 +231,7 @@ function renderOsuSettings(settings, updateInput = true) {
   }
   if (osuText) {
     if (osuSettings.valid && osuSettings.songsDir) {
-      osuText.textContent = `Подключено: найдено ${osuSettings.songsCount} наборов карт (${osuSettings.songsDir})`;
+      osuText.textContent = `Подключено: найдено ${osuSettings.songsCount} наборов карт`;
     } else if (osuSettings.osuPath) {
       osuText.textContent = 'Папка Songs не найдена по указанному пути';
     } else {
