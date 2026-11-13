@@ -24,6 +24,7 @@ const {
   moveFile,
   buildBeatmapFolderName,
   handlePostDownload,
+  selectFolderDialog,
 } = require('../lib/osu.js');
 
 const {
@@ -866,10 +867,36 @@ describe('Интеграция с локальной директорией osu!
       assert.equal(checkRes.status, 200);
       const checkBody = await checkRes.json();
       assert.deepEqual(checkBody.installedSetIds.sort(), [10001, 10002]);
+
+      // 6. POST /api/osu/browse
+      const browsePostRes = await fetch(`http://127.0.0.1:${testPort}/api/osu/browse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initialPath: mockSongsDir }),
+      });
+      assert.equal(browsePostRes.status, 200);
+      const browsePostBody = await browsePostRes.json();
+      assert.equal('cancelled' in browsePostBody, true);
+
+      // 7. GET /api/osu/browse
+      const browseGetRes = await fetch(`http://127.0.0.1:${testPort}/api/osu/browse`);
+      assert.equal(browseGetRes.status, 200);
+      const browseGetBody = await browseGetRes.json();
+      assert.equal('cancelled' in browseGetBody, true);
     } finally {
       await new Promise(r => testServer.close(r));
       if (originalDownloads !== undefined) process.env.DOWNLOADS_DIR = originalDownloads;
       else delete process.env.DOWNLOADS_DIR;
     }
+  });
+
+  test('selectFolderDialog безопасно обрабатывает тестовый режим и моки без вызова GUI', async () => {
+    // В тестовом окружении возвращает null по умолчанию
+    const res1 = await selectFolderDialog();
+    assert.equal(res1, null);
+
+    // Поддерживает mockPath
+    const res2 = await selectFolderDialog('', { mockPath: 'C:\\Games\\osu!' });
+    assert.equal(res2, 'C:\\Games\\osu!');
   });
 });

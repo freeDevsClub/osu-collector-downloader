@@ -37,6 +37,7 @@ const checkboxNoVideo = /** @type {HTMLInputElement | null} */ (byId('checkbox-n
 /** @type {HTMLInputElement[]} */
 const methodInputs = /** @type {any} */ ([...document.querySelectorAll('input[name="download-method"]')]);
 const osuPathInput = /** @type {HTMLInputElement | null} */ (byId('osu-path-input'));
+const osuPathBrowse = byId('osu-path-browse');
 const osuPathSave = byId('osu-path-save');
 const osuDot = byId('osu-dot');
 const osuText = byId('osu-text');
@@ -622,6 +623,43 @@ collectionForm.addEventListener('submit', async event => {
     previewButton.textContent = 'Показать карты';
   }
 });
+
+if (osuPathBrowse) {
+  osuPathBrowse.addEventListener('click', async () => {
+    if (osuPathBrowse.disabled) return;
+    osuPathBrowse.disabled = true;
+    const originalText = osuPathBrowse.textContent;
+    osuPathBrowse.textContent = 'Выбор…';
+    setStatus(osuStatus, 'Открыт Проводник — выберите папку osu! или Songs…');
+    try {
+      const currentVal = osuPathInput ? osuPathInput.value.trim() : osuSettings.osuPath;
+      /** @type {any} */
+      const data = await api('/api/osu/browse', {
+        method: 'POST',
+        body: JSON.stringify({ initialPath: currentVal }),
+        timeoutMs: 190000,
+      });
+      if (data && data.path) {
+        if (osuPathInput) {
+          osuPathInput.value = data.path;
+        }
+        await saveOsuSettings({
+          osuPath: data.path,
+          checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
+          postDownloadAction: postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction,
+        }, true);
+      } else {
+        setStatus(osuStatus, 'Выбор папки отменён.', '');
+      }
+    } catch (err) {
+      const message = toAny(err).message;
+      setStatus(osuStatus, `Не удалось открыть Проводник: ${message}`, 'error');
+    } finally {
+      osuPathBrowse.disabled = false;
+      osuPathBrowse.textContent = originalText;
+    }
+  });
+}
 
 if (osuPathSave) {
   osuPathSave.addEventListener('click', () => {

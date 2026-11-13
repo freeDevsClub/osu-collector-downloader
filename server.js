@@ -111,6 +111,7 @@ const {
   saveSettings: saveOsuSettings,
   classifyCollectionSets,
   getCachedOsuSongs,
+  selectFolderDialog,
 } = require('./lib/osu.js');
 
 /**
@@ -174,6 +175,23 @@ async function handleApi(req, res, url) {
     const setIds = Array.isArray(body?.setIds) ? body.setIds : [];
     const classification = classifyCollectionSets(setIds);
     return json(res, 200, classification);
+  }
+
+  if (url.pathname === '/api/osu/browse' && (req.method === 'POST' || req.method === 'GET')) {
+    let initialPath = '';
+    if (req.method === 'POST') {
+      const body = await readJson(req).catch(() => ({}));
+      initialPath = typeof body?.initialPath === 'string' ? body.initialPath : '';
+    } else {
+      initialPath = url.searchParams.get('initialPath') || '';
+    }
+    try {
+      const selected = await selectFolderDialog(initialPath);
+      return json(res, 200, { path: selected, cancelled: !selected });
+    } catch (err) {
+      log('warn', 'osu.browse.failed', { error: safeErrorMessage(err) });
+      return json(res, 500, { error: safeErrorMessage(err) });
+    }
   }
 
   if (req.method === 'GET' && url.pathname === '/api/mirrors') {
