@@ -15,6 +15,7 @@ const {
 const {
   saveSettings: saveOsuSettings,
   invalidateCachedSongs,
+  loadSettings,
 } = require('../lib/osu.js');
 const { HttpError } = require('../lib/config.js');
 
@@ -39,6 +40,8 @@ describe('Оценка и проверка свободного места на 
 
   afterEach(async () => {
     process.env.DOWNLOADS_DIR = originalDownloadsEnv;
+    invalidateCachedSongs();
+    loadSettings();
     try {
       await fs.rm(tempBaseDir, { recursive: true, force: true });
     } catch {}

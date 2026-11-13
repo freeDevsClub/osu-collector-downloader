@@ -626,7 +626,11 @@ collectionForm.addEventListener('submit', async event => {
 if (osuPathSave) {
   osuPathSave.addEventListener('click', () => {
     const osuPath = osuPathInput ? osuPathInput.value.trim() : '';
-    void saveOsuSettings({ osuPath }, true);
+    void saveOsuSettings({
+      osuPath,
+      checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
+      postDownloadAction: postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction,
+    }, true);
   });
 }
 if (osuPathInput) {
@@ -634,7 +638,11 @@ if (osuPathInput) {
     if (event.key === 'Enter') {
       event.preventDefault();
       const osuPath = osuPathInput.value.trim();
-      void saveOsuSettings({ osuPath }, true);
+      void saveOsuSettings({
+        osuPath,
+        checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
+        postDownloadAction: postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction,
+      }, true);
     }
   });
 }

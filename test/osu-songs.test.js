@@ -226,11 +226,14 @@ describe('Интеграция с локальной директорией osu!
   let tempBaseDir;
   let mockSongsDir;
   let mockDownloadsDir;
+  let originalDownloadsEnv;
 
   before(async () => {
+    originalDownloadsEnv = process.env.DOWNLOADS_DIR;
     tempBaseDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'osu-songs-test-'));
     mockSongsDir = path.join(tempBaseDir, 'Songs');
     mockDownloadsDir = path.join(tempBaseDir, 'downloads');
+    process.env.DOWNLOADS_DIR = mockDownloadsDir;
     await fs.promises.mkdir(mockSongsDir, { recursive: true });
     await fs.promises.mkdir(mockDownloadsDir, { recursive: true });
 
@@ -247,6 +250,13 @@ describe('Интеграция с локальной директорией osu!
   });
 
   after(async () => {
+    if (originalDownloadsEnv !== undefined) {
+      process.env.DOWNLOADS_DIR = originalDownloadsEnv;
+    } else {
+      delete process.env.DOWNLOADS_DIR;
+    }
+    invalidateCachedSongs();
+    loadSettings();
     if (tempBaseDir) {
       await fs.promises.rm(tempBaseDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -469,6 +479,7 @@ describe('Интеграция с локальной директорией osu!
       assert.equal(readdirSyncCalls, 0, 'fs.readdirSync не должен вызываться при повторной передаче того же пути');
     } finally {
       fs.readdirSync = originalReaddirSync;
+      await saveSettings({ checkExisting: true, postDownloadAction: 'none' });
     }
 
     // 4. Попытка передать невалидный osuPath выбрасывает ошибку
@@ -641,6 +652,15 @@ describe('Интеграция с локальной директорией osu!
       assert.deepEqual(res.installedSetIds, [10001]);
       assert.deepEqual(res.downloadedSetIds, [55001]);
 
+      // При checkExisting: false наборы в osu! Songs не должны классифицироваться как установленные
+      await saveSettings({ checkExisting: false });
+      const resDisabled = classifyCollectionSets([10001, 55001, 99999]);
+      assert.deepEqual(resDisabled.installedSetIds, []);
+      assert.deepEqual(resDisabled.downloadedSetIds, [55001]);
+
+      // Возвращаем checkExisting: true
+      await saveSettings({ checkExisting: true });
+
       // Очистка
       await fs.promises.unlink(path.join(mockDownloadsDir, '55001.osz')).catch(() => {});
     } finally {
@@ -692,6 +712,58 @@ describe('Интеграция с локальной директорией osu!
       assert.equal(job.skipIds.has(10001), true, 'Набор 10001 должен быть пропущен');
       assert.equal(job.doneIds.size, 0, 'Ничего не должно быть скачано');
       assert.equal(job.message.includes('уже есть'), true, 'Сообщение должно указывать, что наборы уже в библиотеке');
+    } finally {
+      if (originalDownloads !== undefined) process.env.DOWNLOADS_DIR = originalDownloads;
+      else delete process.env.DOWNLOADS_DIR;
+    }
+  });
+
+  test('Сквозной сценарий: при checkExisting: true загрузчик пропускает несколько установленных карт и оставляет их в skipIds', async () => {
+    const originalDownloads = process.env.DOWNLOADS_DIR;
+    process.env.DOWNLOADS_DIR = mockDownloadsDir;
+    try {
+      await saveSettings({
+        osuPath: mockSongsDir,
+        checkExisting: true,
+        postDownloadAction: 'none',
+      });
+
+      // 10001 и 10002 уже есть в mockSongsDir
+      const job = {
+        id: 'job_skip_multi_osu_test',
+        method: 'mirror',
+        collectionId: 888,
+        collectionName: 'Test Multi Skip',
+        setIds: [10001, 10002],
+        doneIds: new Set(),
+        skipIds: new Set(),
+        errIds: new Set(),
+        errorsById: new Map(),
+        mapsById: new Map([
+          [10001, { label: 'Artist - Title One' }],
+          [10002, { label: 'Artist - Title Two' }],
+        ]),
+        currentBytes: 0,
+        currentTotalBytes: null,
+        currentPercent: 0,
+        currentMirror: null,
+        status: 'queued',
+        message: 'Старт',
+      };
+      jobs.set(job.id, job);
+
+      launchJob(job, { kind: 'mirror' });
+
+      for (let i = 0; i < 20; i++) {
+        if (job.status === 'finished') break;
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      assert.equal(job.status, 'finished');
+      assert.equal(job.skipIds.has(10001), true, 'Набор 10001 должен быть пропущен');
+      assert.equal(job.skipIds.has(10002), true, 'Набор 10002 должен быть пропущен');
+      assert.equal(job.doneIds.size, 0, 'Ничего не должно быть скачано');
+      assert.equal(job.message.includes('уже есть'), true);
     } finally {
       if (originalDownloads !== undefined) process.env.DOWNLOADS_DIR = originalDownloads;
       else delete process.env.DOWNLOADS_DIR;
@@ -750,6 +822,24 @@ describe('Интеграция с локальной директорией osu!
       assert.equal(partialBody.valid, true);
       assert.equal(partialBody.songsDir, mockSongsDir);
       assert.equal(partialBody.songsCount >= 4, true);
+
+      // При checkExisting: false проверка наличия в игре возвращает пустой список
+      const checkResDisabled = await fetch(`http://127.0.0.1:${testPort}/api/osu/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ setIds: [10001, 10002, 999999] }),
+      });
+      assert.equal(checkResDisabled.status, 200);
+      const checkDisabledBody = await checkResDisabled.json();
+      assert.deepEqual(checkDisabledBody.installedSetIds, []);
+
+      // 2b. Включаем checkExisting обратно для последующих шагов
+      const restoreRes = await fetch(`http://127.0.0.1:${testPort}/api/osu/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkExisting: true }),
+      });
+      assert.equal(restoreRes.status, 200);
 
       // 3. POST /api/osu/settings с невалидным путем
       const badRes = await fetch(`http://127.0.0.1:${testPort}/api/osu/settings`, {
