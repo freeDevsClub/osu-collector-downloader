@@ -34,6 +34,8 @@ const {
   resetBootstrap,
 } = require('../server.js');
 
+const { buildBeatmapFolderName } = require('../lib/osu.js');
+
 describe('Сохранение состояния очереди на диск (Queue State Persistence)', () => {
   let appServer;
   let appPort;
@@ -540,5 +542,102 @@ describe('Сохранение состояния очереди на диск (
     assert.notStrictEqual(p1, p3, 'После resetBootstrap должен создаваться новый Promise');
     await p3;
     resetBootstrap();
+  });
+
+  it('полная сериализация метаданных карт (artist, title, creator) исключает расхождение имён папок buildBeatmapFolderName после рестарта', () => {
+    const originalMapInfo = {
+      id: 54321,
+      label: 'xi — Freedom Dive',
+      title: 'Freedom Dive',
+      artist: 'xi',
+      creator: 'Nakagawa-Kanon',
+    };
+
+    const job = {
+      id: 'job_metadata_persistence_test',
+      method: 'mirror',
+      collectionId: '888',
+      setIds: [54321],
+      mapsById: new Map([[54321, originalMapInfo]]),
+      createdAt: 1700000000000,
+    };
+
+    // Имя папки до перезапуска
+    const folderBeforeRestart = buildBeatmapFolderName(54321, job.mapsById.get(54321));
+    assert.equal(folderBeforeRestart, '54321 xi - Freedom Dive');
+
+    // Сериализация и десериализация (имитация рестарта)
+    const serialized = serializeJob(job);
+    assert.equal(serialized.maps[0].artist, 'xi');
+    assert.equal(serialized.maps[0].title, 'Freedom Dive');
+    assert.equal(serialized.maps[0].creator, 'Nakagawa-Kanon');
+
+    const deserialized = deserializeJob(serialized);
+    const restoredMapInfo = deserialized.mapsById.get(54321);
+    assert.ok(restoredMapInfo);
+    assert.equal(restoredMapInfo.artist, 'xi');
+    assert.equal(restoredMapInfo.title, 'Freedom Dive');
+    assert.equal(restoredMapInfo.creator, 'Nakagawa-Kanon');
+
+    // Имя папки после перезапуска должно строго совпадать!
+    const folderAfterRestart = buildBeatmapFolderName(54321, restoredMapInfo);
+    assert.equal(folderAfterRestart, folderBeforeRestart);
+    assert.equal(folderAfterRestart, '54321 xi - Freedom Dive');
+  });
+
+  it('обратная совместимость: десериализация восстанавливает artist и title из старого формата с длинным тире "Artist — Title"', () => {
+    const legacyJobData = {
+      id: 'job_legacy_format',
+      method: 'mirror',
+      setIds: [12345],
+      maps: [
+        { id: 12345, label: 'Camellia — crystallized' },
+      ],
+      createdAt: 1700000000000,
+    };
+
+    const deserialized = deserializeJob(legacyJobData);
+    const restoredMap = deserialized.mapsById.get(12345);
+    assert.ok(restoredMap);
+    assert.equal(restoredMap.artist, 'Camellia');
+    assert.equal(restoredMap.title, 'crystallized');
+
+    // buildBeatmapFolderName должен построить имя с дефисом '-', а не с длинным тире '—'
+    const folderName = buildBeatmapFolderName(12345, restoredMap);
+    assert.equal(folderName, '12345 Camellia - crystallized');
+  });
+
+  it('поле createdAt стабильно, не мутирует при повторной сериализации и возвращается в safeJobForClient', async () => {
+    const initialTime = 1710000000000;
+    const job = {
+      id: 'job_created_at_test',
+      method: 'mirror',
+      setIds: [1],
+      createdAt: initialTime,
+      mapsById: new Map([[1, { id: 1, label: 'Test' }]]),
+    };
+
+    // 1. Первая сериализация
+    const s1 = serializeJob(job);
+    assert.equal(s1.createdAt, initialTime);
+
+    // 2. Имитируем задержку времени и повторную сериализацию
+    await new Promise(r => setTimeout(r, 20));
+    const s2 = serializeJob(job);
+    assert.equal(s2.createdAt, initialTime, 'createdAt не должен сдвигаться при повторных сохранениях');
+
+    // 3. Десериализация сохраняет createdAt
+    const restored = deserializeJob(s2);
+    assert.equal(restored.createdAt, initialTime);
+
+    // 4. safeJobForClient отдает createdAt
+    const clientData = safeJobForClient(restored);
+    assert.equal(clientData.createdAt, initialTime);
+
+    // 5. Авто-инициализация: если в объекте job не было createdAt, serializeJob выставляет его на самом объекте
+    const jobWithoutCreatedAt = { id: 'job_no_created_at', setIds: [2] };
+    const s3 = serializeJob(jobWithoutCreatedAt);
+    assert.ok(typeof s3.createdAt === 'number' && s3.createdAt > 0);
+    assert.equal(jobWithoutCreatedAt.createdAt, s3.createdAt, 'serializeJob должен зафиксировать createdAt на объекте задачи');
   });
 });

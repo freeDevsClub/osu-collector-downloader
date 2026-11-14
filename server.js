@@ -480,6 +480,7 @@ async function handleApi(req, res, url) {
       currentSetId: null,
       status: 'queued',
       message: 'Загрузка в очереди.',
+      createdAt: Date.now(),
     };
     setActiveJob(job);
     jobs.set(job.id, job);
