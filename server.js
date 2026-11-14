@@ -190,7 +190,10 @@ async function resumePausedJobWithSettings(res, job, auth, method, noVideo, trig
     }
   }
   try {
-    const pendingIds = job.setIds.filter((/** @type {number} */ id) => !job.doneIds?.has(id) && !job.skipIds?.has(id));
+    const pendingIds = job.setIds.filter((/** @type {number} */ id) => {
+      if (job.retryOnlyIds && !job.retryOnlyIds.has(id)) return false;
+      return !job.doneIds?.has(id) && !job.skipIds?.has(id);
+    });
     const requiredBytes = await estimateRequiredDiskSpace(pendingIds, job.noVideo, { job });
     if (requiredBytes > 0) {
       await ensureDiskSpace(requiredBytes);
@@ -681,6 +684,18 @@ async function handleApi(req, res, url) {
       job.status = 'cancelled';
       clearAutoResume(job);
       job.abortController?.abort();
+      if (job.retryOnlyIds) {
+        for (const id of job.retryOnlyIds) {
+          if (!job.doneIds?.has(id) && !job.skipIds?.has(id) && !job.errIds?.has(id)) {
+            job.errIds?.add(id);
+            if (job.errorsById && !job.errorsById.has(id)) {
+              const name = job.mapsById?.get(id)?.label || `Набор ${id}`;
+              job.errorsById.set(id, { id, name, error: 'Загрузка отменена' });
+            }
+          }
+        }
+        delete job.retryOnlyIds;
+      }
       job.message = 'Загрузка остановлена.';
       job.finishedAt = Date.now();
       if (getActiveJob() === job) setActiveJob(null);

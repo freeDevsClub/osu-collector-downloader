@@ -10,6 +10,7 @@ const os = require('node:os');
 const {
   getFailedSetIds,
   retryFailedJob,
+  resumeJob,
   safeJobForClient,
   jobCounters,
   jobs,
@@ -19,6 +20,7 @@ const {
 const {
   server,
   MIRRORS,
+  mirrorCooldowns,
   buildMirrorUrl,
 } = require('../server.js');
 const { PORT } = require('../lib/config.js');
@@ -31,6 +33,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
   let tempDir;
   let originalMirrors;
   const requestedBeatmapSets = [];
+  const mockStatusBySetId = new Map();
 
   const validZipBuffer = Buffer.from([
     // Local file header (30 bytes)
@@ -46,8 +49,18 @@ describe('Повтор загрузки наборов с ошибками (Retr
     // Мок-сервер зеркала
     mockMirrorServer = http.createServer((req, res) => {
       const match = req.url?.match(/\/d\/(\d+)/);
-      if (match) {
-        requestedBeatmapSets.push(Number(match[1]));
+      const setId = match ? Number(match[1]) : null;
+      if (setId) {
+        requestedBeatmapSets.push(setId);
+        if (mockStatusBySetId.has(setId)) {
+          const status = mockStatusBySetId.get(setId);
+          res.writeHead(status, {
+            'Content-Type': 'text/plain',
+            'Retry-After': '60',
+          });
+          res.end(`Mock error ${status}`);
+          return;
+        }
       }
       res.writeHead(200, {
         'Content-Type': 'application/octet-stream',
@@ -91,6 +104,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
     jobs.clear();
     setActiveJob(null);
     requestedBeatmapSets.length = 0;
+    mockStatusBySetId.clear();
   });
 
   it('getFailedSetIds корректно извлекает только ошибочные ID наборов без повторов и исключений', () => {
@@ -261,6 +275,67 @@ describe('Повтор загрузки наборов с ошибками (Retr
     assert.equal(failedIds.includes(502), true);
     const clientSafe = safeJobForClient(job);
     assert.equal(clientSafe.canRetryFailed, true);
+  });
+
+  it('при приостановке повторной загрузки (paused) незавершённые карты не помечаются ошибками и сохраняются в retryOnlyIds', async () => {
+    // 1. Создаём задачу с двумя ошибками: 701 и 702
+    const job = {
+      id: 'a000000000000009',
+      method: 'mirror',
+      noVideo: false,
+      setIds: [700, 701, 702],
+      doneIds: new Set([700]),
+      skipIds: new Set(),
+      errIds: new Set([701, 702]),
+      errorsById: new Map([
+        [701, { id: 701, name: 'Map 701', error: 'Initial 500' }],
+        [702, { id: 702, name: 'Map 702', error: 'Initial 500' }],
+      ]),
+      status: 'finished_with_errors',
+      message: 'Были ошибки.',
+    };
+    jobs.set(job.id, job);
+
+    // Настраиваем мок-сервер: набор 701 скачивается успешно, а набор 702 отдаёт 429
+    mockStatusBySetId.set(702, 429);
+
+    retryFailedJob(job, { kind: 'mirror' });
+
+    // Ждём, пока задача перейдёт в paused
+    while (['queued', 'running'].includes(job.status)) {
+      await new Promise(r => setTimeout(r, 20));
+    }
+
+    // Проверяем статус и счётчики
+    assert.equal(job.status, 'paused', 'Задача должна быть в статусе paused из-за остывания зеркал');
+    assert.equal(job.doneIds.has(701), true, 'Набор 701 должен быть успешно скачан');
+    assert.equal(job.doneIds.has(702), false, 'Набор 702 не должен быть скачан');
+
+    // Ключевая проверка Issue 8:
+    assert.equal(job.errIds.has(702), false, 'Набор 702 НЕ должен быть помечен как ошибка в errIds при паузе');
+    assert.equal(job.errorsById?.has(702), false, 'Для набора 702 не должно быть ложного сообщения об ошибке');
+    assert.notEqual(job.retryOnlyIds, undefined, 'retryOnlyIds должен быть сохранён на объекте задачи');
+    assert.equal(job.retryOnlyIds.has(702), true, 'Набор 702 должен оставаться в retryOnlyIds для продолжения');
+
+    const counters = jobCounters(job);
+    assert.equal(counters.deferred, 1, 'Набор 702 должен учитываться как deferred');
+    assert.equal(counters.failed, 0, 'Количество ошибок должно быть 0 (все отложенные наборы ждут возобновления)');
+
+    // 2. Зеркало остывает: убираем 429 и очищаем остывание
+    mockStatusBySetId.delete(702);
+    MIRRORS.forEach(m => mirrorCooldowns.delete(m.id));
+
+    // Нажимаем «Продолжить» (resumeJob)
+    resumeJob(job, { kind: 'mirror' }, 'manual');
+
+    // Ждём завершения докачки
+    while (['queued', 'running'].includes(job.status)) {
+      await new Promise(r => setTimeout(r, 20));
+    }
+
+    assert.equal(job.status, 'finished', 'После возобновления задача должна завершиться успехом');
+    assert.equal(job.doneIds.has(702), true, 'Набор 702 должен быть успешно скачан после возобновления');
+    assert.equal(job.retryOnlyIds, undefined, 'После полного завершения retryOnlyIds должен быть очищен');
   });
 
   it('HTTP API POST /api/downloads/:id/retry-failed валидирует запросы и перезапускает загрузку', async () => {
