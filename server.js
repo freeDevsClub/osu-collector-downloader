@@ -726,6 +726,15 @@ const server = http.createServer(async (req, res) => {
   if (!ensureLocalRequest(req, res)) return;
   const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
+  if (bootstrapPromise) {
+    try {
+      await bootstrapPromise;
+    } catch (bootErr) {
+      log('error', 'server.bootstrap_pending_failed', { error: safeErrorMessage(bootErr) });
+      return json(res, 503, { error: 'Сервер инициализируется, повторите запрос позже.' });
+    }
+  }
+
   try {
     if (url.pathname === '/oauth/callback') {
       if (req.method !== 'GET') {
@@ -777,28 +786,64 @@ setInterval(() => {
   pruneJobs();
 }, 60 * 1000).unref();
 
-async function bootstrapAfterListen() {
-  await fs.promises.mkdir(getDownloadsDir(), { recursive: true });
-  await cleanupStalePartFiles();
-  await loadStateFromDisk();
+/** @type {Promise<void> | null} */
+let bootstrapPromise = null;
+
+function resetBootstrap() {
+  bootstrapPromise = null;
+}
+
+/**
+ * Инициализирует файловую систему и восстанавливает сохранённое состояние задач с диска.
+ * @returns {Promise<void>}
+ */
+function bootstrapServer() {
+  if (!bootstrapPromise) {
+    bootstrapPromise = (async () => {
+      await fs.promises.mkdir(getDownloadsDir(), { recursive: true });
+      await cleanupStalePartFiles();
+      await loadStateFromDisk();
+    })();
+  }
+  return bootstrapPromise;
+}
+
+function bootstrapAfterListen() {
+  return bootstrapServer();
+}
+
+/**
+ * Выполняет инициализацию хранилища с диска и запускает прослушивание входящих HTTP-подключений.
+ * @param {number} [port]
+ * @param {string} [host]
+ * @returns {Promise<import('node:http').Server>}
+ */
+async function startServer(port = PORT, host = HOST) {
+  await bootstrapServer();
+  return new Promise((resolve, reject) => {
+    const onError = (/** @type {any} */ error) => {
+      log('error', 'server.failed', { error: safeErrorMessage(error), port });
+      reject(error);
+    };
+    server.once('error', onError);
+    server.listen(port, host, () => {
+      server.off('error', onError);
+      log('info', 'server.started', {
+        url: `http://${host}:${port}`,
+        node: process.version,
+        downloadsDirectory: getDownloadsDir(),
+        oauthCallback: CALLBACK_URL,
+        oauthEnabled: ENABLE_OAUTH,
+        oauthConfigured: oauthConfigured(),
+        downloadMirrors: MIRRORS.map(mirror => mirror.id),
+      });
+      log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.${ENABLE_OAUTH ? ' OAuth включён.' : ' OAuth отключён флагом (ENABLE_OAUTH=1 для включения).'}` });
+      resolve(server);
+    });
+  });
 }
 
 if (require.main === module) {
-  server.listen(PORT, HOST, () => {
-    log('info', 'server.started', {
-      url: `http://${HOST}:${PORT}`,
-      node: process.version,
-      downloadsDirectory: getDownloadsDir(),
-      oauthCallback: CALLBACK_URL,
-      oauthEnabled: ENABLE_OAUTH,
-      oauthConfigured: oauthConfigured(),
-      downloadMirrors: MIRRORS.map(mirror => mirror.id),
-    });
-    log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.${ENABLE_OAUTH ? ' OAuth включён.' : ' OAuth отключён флагом (ENABLE_OAUTH=1 для включения).'}` });
-  });
-
-  void bootstrapAfterListen();
-
   server.on('error', (/** @type {any} */ error) => {
     log('error', 'server.failed', { error: safeErrorMessage(error), port: PORT });
     if (error?.code === 'EADDRINUSE') process.exit(1);
@@ -831,6 +876,11 @@ if (require.main === module) {
       setTimeout(() => process.exit(0), 3000).unref();
     });
   }
+
+  startServer().catch((error) => {
+    log('error', 'server.bootstrap_failed', { error: safeErrorMessage(error), stack: error?.stack });
+    process.exit(1);
+  });
 }
 
 module.exports = {
@@ -879,4 +929,7 @@ module.exports = {
   resumePausedJobWithSettings,
   getStateFilePath,
   bootstrapAfterListen,
+  bootstrapServer,
+  resetBootstrap,
+  startServer,
 };

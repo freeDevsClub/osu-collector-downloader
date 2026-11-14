@@ -29,6 +29,8 @@ const {
   server,
   MIRRORS,
   buildMirrorUrl,
+  bootstrapServer,
+  resetBootstrap,
 } = require('../server.js');
 
 describe('Сохранение состояния очереди на диск (Queue State Persistence)', () => {
@@ -463,5 +465,69 @@ describe('Сохранение состояния очереди на диск (
     assert.equal(resActive.data.id, 'active_check_job_1');
     assert.equal(resActive.data.status, 'paused');
     assert.equal(resActive.data.downloaded, 1);
+  });
+
+  it('устранение гонки: фоновый bootstrapServer блокирует ранний GET /api/downloads/active от ложного 404', async () => {
+    // 1. Создаём сохранённую задачу на диске
+    const jobOnDisk = {
+      id: 'job_bootstrap_race_test',
+      method: 'mirror',
+      noVideo: false,
+      collectionId: '555',
+      collectionName: 'Bootstrap Race',
+      setIds: [951, 952],
+      doneIds: new Set([951]),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      extraFailures: 0,
+      mapsById: new Map([
+        [951, { id: 951, label: 'Map 951' }],
+        [952, { id: 952, label: 'Map 952' }],
+      ]),
+      status: 'paused',
+      message: 'Задача на паузе до рестарта.',
+    };
+    jobs.set(jobOnDisk.id, jobOnDisk);
+    setActiveJob(jobOnDisk);
+    await saveStateToDisk();
+
+    // 2. Имитируем старт сервера с чистой памятью
+    jobs.clear();
+    setActiveJob(null);
+    resetBootstrap();
+
+    // 3. Запускаем bootstrapServer (дисковое I/O) и параллельно делаем запрос
+    const bootPromise = bootstrapServer();
+
+    const res = await new Promise(resolve => {
+      http.get(`http://127.0.0.1:${appPort}/api/downloads/active`, httpRes => {
+        let body = '';
+        httpRes.on('data', chunk => { body += chunk; });
+        httpRes.on('end', () => resolve({ status: httpRes.statusCode, data: JSON.parse(body) }));
+      });
+    });
+
+    await bootPromise;
+    resetBootstrap();
+
+    // 4. Запрос должен был дождаться окончания bootstrap и вернуть 200 с восстановленной задачей
+    assert.equal(res.status, 200, 'Запрос должен вернуть 200, а не ложный 404');
+    assert.equal(res.data.id, 'job_bootstrap_race_test');
+    assert.equal(res.data.status, 'paused');
+    assert.equal(res.data.downloaded, 1);
+  });
+
+  it('bootstrapServer идемпотентен, переиспользует единый Promise и корректно сбрасывается через resetBootstrap', async () => {
+    resetBootstrap();
+    const p1 = bootstrapServer();
+    const p2 = bootstrapServer();
+    assert.strictEqual(p1, p2, 'Параллельные вызовы bootstrapServer должны возвращать один и тот же Promise');
+    await p1;
+    resetBootstrap();
+    const p3 = bootstrapServer();
+    assert.notStrictEqual(p1, p3, 'После resetBootstrap должен создаваться новый Promise');
+    await p3;
+    resetBootstrap();
   });
 });
