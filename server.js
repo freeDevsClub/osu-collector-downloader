@@ -45,7 +45,10 @@ const {
   fetchCollection,
   collectionCache,
   pruneCollectionCache,
+  setCollectionCache,
   populateMetadataInBackground,
+  COLLECTION_CACHE_TTL_MS,
+  COLLECTION_CACHE_DEGRADED_TTL_MS,
 } = require('./lib/collector.js');
 
 const {
@@ -390,6 +393,7 @@ async function handleApi(req, res, url) {
       maps: data.maps,
       setIds: data.setIds,
       metadataComplete: Boolean(data.metadataComplete),
+      metadataDegraded: Boolean(data.metadataDegraded),
       metadataProgress: Number(data.metadataProgress || 0),
       installedSetIds,
       downloadedSetIds,
@@ -410,6 +414,7 @@ async function handleApi(req, res, url) {
       maps: data.maps,
       setIds: data.setIds,
       metadataComplete: Boolean(data.metadataComplete),
+      metadataDegraded: Boolean(data.metadataDegraded),
       metadataProgress: Number(data.metadataProgress || 0),
       installedSetIds,
       downloadedSetIds,
@@ -906,6 +911,10 @@ module.exports = {
   fetchCollection,
   populateMetadataInBackground,
   collectionCache,
+  pruneCollectionCache,
+  setCollectionCache,
+  COLLECTION_CACHE_TTL_MS,
+  COLLECTION_CACHE_DEGRADED_TTL_MS,
   parseSetIds,
   fallbackMapInfo,
   MIRRORS,

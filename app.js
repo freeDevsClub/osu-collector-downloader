@@ -489,9 +489,14 @@ function updateMetadataBadge(data) {
   if (!chip) {
     chip = document.createElement('span');
     chip.id = 'metadata-chip';
-    chip.className = 'chip loading';
     byId('collection-meta').append(chip);
   }
+  if (data.metadataDegraded) {
+    chip.className = 'chip chip-warn';
+    chip.textContent = `Часть названий недоступна (${data.metadataProgress || 0}/${data.count || 0})`;
+    return;
+  }
+  chip.className = 'chip loading';
   chip.textContent = `Загрузка названий (${data.metadataProgress || 0}/${data.count || 0})…`;
 }
 
@@ -533,7 +538,7 @@ async function pollMetadata() {
     updateMetadataBadge(data);
     updateMapListLabels(data.maps);
 
-    if (data.metadataComplete) {
+    if (data.metadataComplete || data.metadataDegraded) {
       stopMetadataPolling();
       return;
     }
@@ -589,11 +594,12 @@ function renderCollection(data) {
     setStatus(collectionStatus, `Найдено ${data.count} уникальных наборов карт.`, 'success');
   }
 
-  if (!data.metadataComplete) {
+  if (!data.metadataComplete && !data.metadataDegraded) {
     startMetadataPolling(data.id);
   } else {
     stopMetadataPolling();
   }
+  updateMetadataBadge(data);
 }
 
 collectionForm.addEventListener('submit', async event => {

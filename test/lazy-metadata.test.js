@@ -6,9 +6,17 @@ const assert = require('node:assert/strict');
 const {
   fetchCollection,
   collectionCache,
+  pruneCollectionCache,
+  COLLECTION_CACHE_TTL_MS,
+  COLLECTION_CACHE_DEGRADED_TTL_MS,
+  populateMetadataInBackground,
   server,
 } = require('../server.js');
-const { PORT } = require('../lib/config.js');
+const {
+  PORT,
+  PAGINATION_PAGE_LIMIT,
+  MAPSET_FETCH_BUDGET_MS,
+} = require('../lib/config.js');
 const { safeJobForClient } = require('../lib/jobs.js');
 
 describe('Мгновенный старт и ленивая подгрузка названий (Instant Start & Lazy Metadata)', () => {
@@ -272,7 +280,7 @@ describe('Мгновенный старт и ленивая подгрузка �
     assert.equal(getData2.maps[0].label, 'xi — Blue Zenith');
   });
 
-  it('грамотно обрабатывает ошибки beatmapsV2 без падения процесса', async () => {
+  it('грамотно обрабатывает ошибки beatmapsV2: помечает деградированной и выставляет degraded-TTL', async () => {
     globalThis.fetch = async (input, init) => {
       const url = String(input);
       if (url.includes('/api/collections/99004/beatmapsV2')) {
@@ -298,8 +306,210 @@ describe('Мгновенный старт и ленивая подгрузка �
     if (snapshot.metadataPromise) {
       await snapshot.metadataPromise;
     }
-    // При сбое beatmapsV2 метаданные помечаются как завершённые, процесс не падает
-    assert.equal(snapshot.metadataComplete, true);
+    // При сбое beatmapsV2 метаданные помечаются деградированными, процесс не падает
+    assert.equal(snapshot.metadataComplete, false);
+    assert.equal(snapshot.metadataDegraded, true);
     assert.equal(snapshot.maps[0].label, 'Набор 401');
+
+    // Кэш для деградированной коллекции должен получить degraded-TTL (2 мин), а не 10 мин
+    const entry = collectionCache.get('99004');
+    assert.ok(entry);
+    assert.equal(entry.ttl, COLLECTION_CACHE_DEGRADED_TTL_MS);
+    assert.equal(entry.data.metadataDegraded, true);
+  });
+
+  it('при успешном фоновом обогащении кэш получает полный TTL (10 мин), а при частичном — degraded TTL (2 мин)', async () => {
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes('/api/collections/99005/beatmapsV2')) {
+        return new Response(
+          JSON.stringify({
+            beatmaps: [{ beatmapset_id: 501, beatmapset: { title: 'Complete Song', artist: 'Artist 5' } }],
+            hasMore: false,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/collections/99005')) {
+        return new Response(
+          JSON.stringify({ id: 99005, name: 'Complete Coll', beatmapCount: 1, beatmapsets: [{ id: 501 }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/collections/99006/beatmapsV2')) {
+        // Возвращает только 1 набор из 2 требуемых (частичное обогащение)
+        return new Response(
+          JSON.stringify({
+            beatmaps: [{ beatmapset_id: 601, beatmapset: { title: 'Partial Song', artist: 'Artist 6' } }],
+            hasMore: false,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/collections/99006')) {
+        return new Response(
+          JSON.stringify({ id: 99006, name: 'Partial Coll', beatmapCount: 2, beatmapsets: [{ id: 601 }, { id: 602 }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return originalFetch(input, init);
+    };
+
+    // 1. Полная коллекция
+    const snapComplete = await fetchCollection('99005');
+    if (snapComplete.metadataPromise) await snapComplete.metadataPromise;
+    assert.equal(snapComplete.metadataComplete, true);
+    assert.equal(snapComplete.metadataDegraded, false);
+    const entryComplete = collectionCache.get('99005');
+    assert.equal(entryComplete.ttl, COLLECTION_CACHE_TTL_MS);
+
+    // 2. Частично обогащённая коллекция
+    const snapPartial = await fetchCollection('99006');
+    if (snapPartial.metadataPromise) await snapPartial.metadataPromise;
+    assert.equal(snapPartial.metadataComplete, false);
+    assert.equal(snapPartial.metadataDegraded, true);
+    assert.equal(snapPartial.metadataProgress, 1);
+    assert.equal(snapPartial.count, 2);
+    const entryPartial = collectionCache.get('99006');
+    assert.equal(entryPartial.ttl, COLLECTION_CACHE_DEGRADED_TTL_MS);
+  });
+
+  it('pruneCollectionCache вытесняет деградированные записи через 2 минуты, но сохраняет полные записи на 10 минут', () => {
+    const now = Date.now();
+    // Деградированная запись 2.5 минуты назад
+    collectionCache.set('deg_old', {
+      data: { id: 1, name: 'Degraded Old' },
+      fetchedAt: now - 150_000,
+      ttl: COLLECTION_CACHE_DEGRADED_TTL_MS, // 120_000
+    });
+    // Свежая деградированная запись (30 секунд назад)
+    collectionCache.set('deg_fresh', {
+      data: { id: 2, name: 'Degraded Fresh' },
+      fetchedAt: now - 30_000,
+      ttl: COLLECTION_CACHE_DEGRADED_TTL_MS,
+    });
+    // Полная запись 2.5 минуты назад (при TTL 10 минут она всё ещё свежая)
+    collectionCache.set('full_active', {
+      data: { id: 3, name: 'Full Active' },
+      fetchedAt: now - 150_000,
+      ttl: COLLECTION_CACHE_TTL_MS, // 600_000
+    });
+
+    pruneCollectionCache();
+
+    assert.equal(collectionCache.has('deg_old'), false, 'Устаревшая деградированная запись должна быть удалена');
+    assert.equal(collectionCache.has('deg_fresh'), true, 'Свежая деградированная запись должна остаться');
+    assert.equal(collectionCache.has('full_active'), true, 'Полная запись со сроком 2.5 мин не должна удаляться');
+  });
+
+  it('после истечения degraded-TTL повторный запрос fetchCollection перезапрашивает коллекцию и возобновляет обогащение', async () => {
+    let beatmapsCalls = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes('/api/collections/99007/beatmapsV2')) {
+        beatmapsCalls += 1;
+        if (beatmapsCalls === 1) {
+          // Первая попытка: сбой upstream
+          return new Response('Gateway Timeout', { status: 504 });
+        }
+        // Вторая попытка: успешный ответ
+        return new Response(
+          JSON.stringify({
+            beatmaps: [{ beatmapset_id: 701, beatmapset: { title: 'Recovered Song', artist: 'Artist 7' } }],
+            hasMore: false,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/collections/99007')) {
+        return new Response(
+          JSON.stringify({ id: 99007, name: 'Recovery Coll', beatmapCount: 1, beatmapsets: [{ id: 701 }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return originalFetch(input, init);
+    };
+
+    // 1. Первый запрос: сбой и сохранение с degraded-TTL
+    const snap1 = await fetchCollection('99007');
+    if (snap1.metadataPromise) await snap1.metadataPromise;
+    assert.equal(snap1.metadataComplete, false);
+    assert.equal(snap1.metadataDegraded, true);
+    const entry1 = collectionCache.get('99007');
+    assert.equal(entry1.ttl, COLLECTION_CACHE_DEGRADED_TTL_MS);
+
+    // 2. Симулируем истечение degraded-TTL (более 2 минут)
+    entry1.fetchedAt = Date.now() - (COLLECTION_CACHE_DEGRADED_TTL_MS + 5000);
+
+    // 3. Второй запрос: устаревший кэш сбрасывается, запрос уходит в osu!Collector и успешно обогащается
+    const snap2 = await fetchCollection('99007');
+    if (snap2.metadataPromise) await snap2.metadataPromise;
+    assert.equal(snap2.metadataComplete, true);
+    assert.equal(snap2.metadataDegraded, false);
+    assert.equal(snap2.maps[0].label, 'Artist 7 — Recovered Song');
+    const entry2 = collectionCache.get('99007');
+    assert.equal(entry2.ttl, COLLECTION_CACHE_TTL_MS);
+    assert.equal(beatmapsCalls, 2);
+  });
+
+  it('дефолтные лимиты метаданных соответствуют увеличенным значениям для крупных коллекций', () => {
+    assert.ok(PAGINATION_PAGE_LIMIT >= 250, 'PAGINATION_PAGE_LIMIT по умолчанию должен быть не менее 250');
+    assert.ok(MAPSET_FETCH_BUDGET_MS >= 60000, 'MAPSET_FETCH_BUDGET_MS по умолчанию должен быть не менее 60000');
+    assert.equal(COLLECTION_CACHE_DEGRADED_TTL_MS, 2 * 60 * 1000, 'COLLECTION_CACHE_DEGRADED_TTL_MS должен быть 2 минуты');
+    assert.equal(COLLECTION_CACHE_TTL_MS, 10 * 60 * 1000, 'COLLECTION_CACHE_TTL_MS должен быть 10 минут');
+  });
+
+  it('HTTP API POST /api/collections и GET /api/collections/:id отдают metadataDegraded: true при сбое', async () => {
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes('/api/collections/99008/beatmapsV2')) {
+        return new Response('Rate Limited', { status: 429 });
+      }
+      if (url.includes('/api/collections/99008')) {
+        return new Response(
+          JSON.stringify({
+            id: 99008,
+            name: 'API Degraded Test',
+            uploader: { username: 'Degrader' },
+            beatmapCount: 1,
+            beatmapsets: [{ id: 801 }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return originalFetch(input, init);
+    };
+
+    const localHeaders = {
+      Host: `127.0.0.1:${PORT}`,
+      'Content-Type': 'application/json',
+    };
+
+    // 1. POST /api/collections
+    const postRes = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections`, {
+      method: 'POST',
+      headers: localHeaders,
+      body: JSON.stringify({ url: 'https://osucollector.com/collections/99008' }),
+    });
+    assert.equal(postRes.status, 200);
+    const postData = await postRes.json();
+    assert.equal(postData.id, 99008);
+    assert.equal(postData.metadataComplete, false);
+
+    // Дожидаемся завершения фонового обогащения со статусом 429
+    const cachedEntry = collectionCache.get('99008');
+    if (cachedEntry?.data?.metadataPromise) {
+      await cachedEntry.data.metadataPromise;
+    }
+
+    // 2. GET /api/collections/99008 возвращает metadataDegraded: true
+    const getRes = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections/99008`, {
+      headers: localHeaders,
+    });
+    assert.equal(getRes.status, 200);
+    const getData = await getRes.json();
+    assert.equal(getData.metadataComplete, false);
+    assert.equal(getData.metadataDegraded, true);
+    assert.equal(getData.metadataProgress, 0);
   });
 });
