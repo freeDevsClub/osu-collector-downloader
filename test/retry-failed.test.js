@@ -16,6 +16,7 @@ const {
   jobs,
   getActiveJob,
   setActiveJob,
+  waitForPendingSaveState,
 } = require('../lib/jobs.js');
 const {
   server,
@@ -85,6 +86,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
   });
 
   after(async () => {
+    await waitForPendingSaveState();
     if (appServer) {
       await new Promise(resolve => appServer.close(resolve));
     }
@@ -100,7 +102,8 @@ describe('Повтор загрузки наборов с ошибками (Retr
     }
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await waitForPendingSaveState();
     jobs.clear();
     setActiveJob(null);
     requestedBeatmapSets.length = 0;
@@ -334,6 +337,8 @@ describe('Повтор загрузки наборов с ошибками (Retr
     while (['queued', 'running'].includes(job.status)) {
       await new Promise(r => setTimeout(r, 20));
     }
+    if (job._promise) await job._promise;
+    await waitForPendingSaveState();
 
     assert.equal(job.status, 'finished', 'После возобновления задача должна завершиться успехом');
     assert.equal(job.doneIds.has(702), true, 'Набор 702 должен быть успешно скачан после возобновления');
@@ -421,6 +426,8 @@ describe('Повтор загрузки наборов с ошибками (Retr
     while (['queued', 'running'].includes(jobWithFail.status)) {
       await new Promise(r => setTimeout(r, 20));
     }
+    if (jobWithFail._promise) await jobWithFail._promise;
+    await waitForPendingSaveState();
     assert.equal(jobWithFail.status, 'finished');
     assert.equal(jobWithFail.doneIds.has(604), true);
   });
@@ -503,6 +510,8 @@ describe('Повтор загрузки наборов с ошибками (Retr
     while (['queued', 'running'].includes(jobFatal.status)) {
       await new Promise(r => setTimeout(r, 20));
     }
+    if (jobFatal._promise) await jobFatal._promise;
+    await waitForPendingSaveState();
 
     assert.equal(jobFatal.status, 'finished');
     assert.equal(jobFatal.doneIds.has(802), true);
