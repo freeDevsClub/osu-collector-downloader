@@ -1,5 +1,7 @@
 # osu!Collector Downloader — локальное веб-приложение
 
+[![CI](https://github.com/kymifBSM/osu-collector-downloader/actions/workflows/ci.yml/badge.svg)](https://github.com/kymifBSM/osu-collector-downloader/actions/workflows/ci.yml)
+
 Приложение на Node.js открывает локальную веб-страницу, получает публичный список наборов карт из osu!Collector и загружает `.osz` с публичных зеркал osu!. Вход в аккаунт, cookie и OAuth для стандартной загрузки не нужны. Сторонние runtime-зависимости отсутствуют (Zero-Dependency). Сервер слушает исключительно loopback-интерфейс `127.0.0.1`, поэтому веб-страница и API недоступны другим компьютерам в локальной сети.
 
 ---
