@@ -422,4 +422,89 @@ describe('Повтор загрузки наборов с ошибками (Retr
     assert.equal(jobWithFail.status, 'finished');
     assert.equal(jobWithFail.doneIds.has(604), true);
   });
+
+  it('jobCounters и getFailedSetIds устойчивы к fatal ошибке даже если extraFailures не был предварительно сохранён', () => {
+    const jobWithoutExtraField = {
+      setIds: [901, 902],
+      doneIds: new Set(),
+      skipIds: new Set(),
+      errIds: new Set(),
+      extraFailures: 0,
+      errorsById: new Map([
+        ['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Unexpected exception' }],
+      ]),
+    };
+    const counters = jobCounters(jobWithoutExtraField);
+    assert.equal(counters.failed, 1, 'jobCounters должен учесть fatal ошибку из errorsById');
+    const failedIds = getFailedSetIds(jobWithoutExtraField);
+    assert.deepEqual(failedIds.sort((a, b) => a - b), [901, 902]);
+  });
+
+  it('корректно обрабатывает критический сбой задачи (fatal): учитывает extraFailures, отображает canRetryFailed и успешно перезапускает незавершённые наборы', async () => {
+    const localHeaders = {
+      Host: `127.0.0.1:${PORT}`,
+      'Content-Type': 'application/json',
+    };
+    const jobFatal = {
+      id: 'a000000000000005',
+      method: 'mirror',
+      noVideo: false,
+      status: 'finished_with_errors',
+      message: 'Критический сбой задачи: Network disconnected',
+      setIds: [801, 802, 803],
+      doneIds: new Set([801]),
+      skipIds: new Set(),
+      errIds: new Set(),
+      extraFailures: 1,
+      errorsById: new Map([
+        ['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Network disconnected' }],
+      ]),
+      mapsById: new Map([
+        [801, { id: 801, label: 'Map 801' }],
+        [802, { id: 802, label: 'Map 802' }],
+        [803, { id: 803, label: 'Map 803' }],
+      ]),
+    };
+    jobs.set(jobFatal.id, jobFatal);
+
+    // 1. Проверяем счётчики и состояние safeJobForClient
+    const counters = jobCounters(jobFatal);
+    assert.equal(counters.failed, 1, 'fatal error должен учитываться в failed');
+    assert.equal(counters.downloaded, 1);
+    assert.equal(counters.deferred, 1);
+
+    const clientSafe = safeJobForClient(jobFatal);
+    assert.equal(clientSafe.failed, 1);
+    assert.equal(clientSafe.canRetryFailed, true, 'canRetryFailed должен быть true при наличии fatal error');
+    assert.equal(clientSafe.errors.length, 1);
+    assert.equal(clientSafe.errors[0].id, 'fatal');
+    assert.equal(clientSafe.errors[0].name, 'Системный сбой');
+
+    // 2. Проверяем getFailedSetIds
+    const failedIds = getFailedSetIds(jobFatal);
+    assert.deepEqual(failedIds.sort((a, b) => a - b), [802, 803], 'Должны вернуться все незавершённые наборы (802, 803), а 801 исключён');
+
+    // 3. Вызываем POST /api/downloads/:id/retry-failed через HTTP API
+    const res = await fetch(`http://127.0.0.1:${appPort}/api/downloads/${jobFatal.id}/retry-failed?method=mirror`, {
+      method: 'POST',
+      headers: localHeaders,
+    });
+    assert.equal(res.status, 202);
+    const data = await res.json();
+    assert.equal(data.status, 'queued');
+
+    // 4. Проверяем сброс extraFailures и очистку fatal ошибки
+    assert.equal(jobFatal.extraFailures, 0);
+    assert.equal(jobFatal.errorsById.has('fatal'), false, 'fatal ошибка должна быть удалена из errorsById');
+
+    // Дожидаемся завершения докачки
+    while (['queued', 'running'].includes(jobFatal.status)) {
+      await new Promise(r => setTimeout(r, 20));
+    }
+
+    assert.equal(jobFatal.status, 'finished');
+    assert.equal(jobFatal.doneIds.has(802), true);
+    assert.equal(jobFatal.doneIds.has(803), true);
+    assert.equal(jobCounters(jobFatal).failed, 0);
+  });
 });
