@@ -23,6 +23,7 @@ const {
   loadStateFromDisk,
   scheduleSaveState,
   clearSaveStateTimer,
+  waitForPendingSaveState,
 } = require('../lib/jobs.js');
 
 const {
@@ -85,7 +86,7 @@ describe('Сохранение состояния очереди на диск (
   });
 
   after(async () => {
-    clearSaveStateTimer();
+    await waitForPendingSaveState();
     if (appServer) {
       if (typeof appServer.closeAllConnections === 'function') {
         appServer.closeAllConnections();
@@ -107,11 +108,12 @@ describe('Сохранение состояния очереди на диск (
     }
   });
 
-  beforeEach(() => {
-    clearSaveStateTimer();
+  beforeEach(async () => {
+    await waitForPendingSaveState();
     jobs.clear();
     setActiveJob(null);
     requestedSets.length = 0;
+    resetBootstrap();
   });
 
   it('serializeJob и deserializeJob корректно преобразуют структуры данных', () => {
@@ -337,6 +339,9 @@ describe('Сохранение состояния очереди на диск (
       }, 50);
     });
 
+    if (restoredJob._promise) await restoredJob._promise;
+    await waitForPendingSaveState();
+
     assert.equal(restoredJob.status, 'finished');
     assert.equal(restoredJob.doneIds.has(601), true);
     assert.equal(restoredJob.doneIds.has(602), true);
@@ -397,6 +402,9 @@ describe('Сохранение состояния очереди на диск (
       }, 50);
     });
 
+    if (restoredJob._promise) await restoredJob._promise;
+    await waitForPendingSaveState();
+
     assert.equal(restoredJob.status, 'finished');
     assert.ok(restoredJob.doneIds.has(702), 'Набор 702 должен быть успешно докачан');
     assert.ok(requestedSets.includes(702), 'Запрос должен быть отправлен на упавший 702');
@@ -404,6 +412,7 @@ describe('Сохранение состояния очереди на диск (
   });
 
   it('корректно обрабатывает отсутствующий, пустой и повреждённый .state.json без сбоев', async () => {
+    await waitForPendingSaveState();
     const stateFile = getStateFilePath();
 
     // 1. Файл не существует
@@ -468,6 +477,7 @@ describe('Сохранение состояния очереди на диск (
   });
 
   it('устранение гонки: фоновый bootstrapServer блокирует ранний GET /api/downloads/active от ложного 404', async () => {
+    await waitForPendingSaveState();
     // 1. Создаём сохранённую задачу на диске
     const jobOnDisk = {
       id: 'job_bootstrap_race_test',
@@ -509,6 +519,7 @@ describe('Сохранение состояния очереди на диск (
     });
 
     await bootPromise;
+    await waitForPendingSaveState();
     resetBootstrap();
 
     // 4. Запрос должен был дождаться окончания bootstrap и вернуть 200 с восстановленной задачей

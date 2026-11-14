@@ -233,6 +233,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
     while (['queued', 'running'].includes(job.status)) {
       await new Promise(r => setTimeout(r, 20));
     }
+    if (job._promise) await job._promise;
 
     assert.equal(job.status, 'finished');
     assert.deepEqual(requestedBeatmapSets, [402], 'Только набор 402 должен был быть запрошен с зеркала');
@@ -269,6 +270,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
     while (job.retryOnlyIds) {
       await new Promise(r => setTimeout(r, 10));
     }
+    if (job._promise) await job._promise;
 
     // Набор 502 не был завершён, значит должен остаться в errIds
     const failedIds = getFailedSetIds(job);

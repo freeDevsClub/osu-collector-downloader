@@ -88,6 +88,7 @@ const {
   saveStateToDisk,
   loadStateFromDisk,
   scheduleSaveState,
+  waitForPendingSaveState,
 } = require('./lib/jobs.js');
 
 const {
@@ -869,6 +870,7 @@ if (require.main === module) {
         job.abortController?.abort();
         clearAutoResume(job);
       }
+      await waitForPendingSaveState().catch(() => {});
       await saveStateToDisk().catch(() => {});
       await cleanupStalePartFiles().catch(() => {});
       server.closeIdleConnections?.();
@@ -932,4 +934,5 @@ module.exports = {
   bootstrapServer,
   resetBootstrap,
   startServer,
+  waitForPendingSaveState,
 };
