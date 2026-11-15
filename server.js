@@ -13,6 +13,7 @@ const {
   getDownloadsDir,
   MAX_BODY,
   ENABLE_OAUTH,
+  isOAuthEnabled,
   CALLBACK_URL,
   MIRRORS,
   DEFAULT_MIRRORS,
@@ -33,6 +34,9 @@ const {
 const {
   addRedaction,
   removeRedaction,
+  clearRedactions,
+  getActiveRedactionsCount,
+  activeRedactions,
   safeErrorMessage,
   parseCookies,
   ensureLocalRequest,
@@ -111,6 +115,7 @@ const {
   oauthConfigured,
   buildAuthorizeUrl,
   oauthStatus,
+  storeOsuToken,
   ensureOsuToken,
   handleOauthCallback,
   pruneSessionsAndOauth,
@@ -160,7 +165,7 @@ async function resolveJobAuth(req, job) {
     return { kind: 'mirror' };
   }
   if (job.method === 'oauth') {
-    if (!ENABLE_OAUTH) {
+    if (!isOAuthEnabled()) {
       throw new HttpError(403, 'OAuth-метод отключён на сервере (запустите с ENABLE_OAUTH=1).');
     }
     const token = await ensureOsuToken();
@@ -280,20 +285,21 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/api/oauth/status') {
     const status = oauthStatus();
+    const oauthActive = isOAuthEnabled();
     return json(res, 200, {
-      enabled: ENABLE_OAUTH,
-      configured: ENABLE_OAUTH ? status.configured : false,
-      connected: ENABLE_OAUTH ? status.connected : false,
-      kind: ENABLE_OAUTH ? status.kind : null,
-      scope: ENABLE_OAUTH ? status.scope : null,
-      expiresAt: ENABLE_OAUTH ? status.expiresAt : null,
-      clientId: ENABLE_OAUTH ? status.clientId : null,
+      enabled: oauthActive,
+      configured: oauthActive ? status.configured : false,
+      connected: oauthActive ? status.connected : false,
+      kind: oauthActive ? status.kind : null,
+      scope: oauthActive ? status.scope : null,
+      expiresAt: oauthActive ? status.expiresAt : null,
+      clientId: oauthActive ? status.clientId : null,
       callbackUrl: status.callbackUrl,
     });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/oauth/config') {
-    if (!ENABLE_OAUTH) {
+    if (!isOAuthEnabled()) {
       return json(res, 403, { error: 'OAuth-авторизация отключена на сервере (запустите с ENABLE_OAUTH=1).' });
     }
     const body = await readJson(req);
@@ -308,6 +314,9 @@ async function handleApi(req, res, url) {
     const changed = oauthConfig.clientId !== clientId || (replacingSecret && oauthConfig.clientSecret !== clientSecret);
     oauthConfig.clientId = clientId;
     if (replacingSecret || !oauthConfig.clientSecret) {
+      if (oauthConfig.clientSecret && oauthConfig.clientSecret !== clientSecret) {
+        removeRedaction(oauthConfig.clientSecret);
+      }
       oauthConfig.clientSecret = clientSecret;
       addRedaction(clientSecret);
     }
@@ -325,9 +334,12 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/oauth/start') {
-    if (!ENABLE_OAUTH) {
+    if (!isOAuthEnabled()) {
       return json(res, 403, { error: 'OAuth-авторизация отключена на сервере (запустите с ENABLE_OAUTH=1).' });
     }
+    const body = await readJson(req);
+    const requestedClientId = typeof body.clientId === 'string' || Number.isSafeInteger(body.clientId) ? String(body.clientId || '').trim() : '';
+    const clientId = requestedClientId || oauthConfig.clientId;
     if (!oauthConfigured()) return json(res, 400, { error: 'Сначала сохраните Client ID и Client Secret.' });
     const state = crypto.randomBytes(24).toString('hex');
     const nonce = crypto.randomBytes(24).toString('hex');
@@ -339,7 +351,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'DELETE' && url.pathname === '/api/oauth/disconnect') {
-    if (!ENABLE_OAUTH) {
+    if (!isOAuthEnabled()) {
       return json(res, 403, { error: 'OAuth-авторизация отключена на сервере.' });
     }
     removeRedaction(oauthToken.accessToken);
@@ -360,6 +372,15 @@ async function handleApi(req, res, url) {
     const session = typeof body.session === 'string' ? body.session.trim() : '';
     if (session.length < 20 || session.length > 4096 || /[;\r\n]/.test(session)) {
       return json(res, 400, { error: 'Проверьте значение cookie osu_session.' });
+    }
+    const cookies = parseCookies(req.headers.cookie);
+    const existingToken = cookies['osu_collector_token'];
+    if (existingToken) {
+      const existing = sessions.get(existingToken);
+      if (existing) {
+        removeRedaction(existing.value);
+        sessions.delete(existingToken);
+      }
     }
     const token = crypto.randomBytes(32).toString('hex');
     sessions.set(token, { value: session, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
@@ -944,7 +965,16 @@ module.exports = {
   emitJobUpdate,
   jobs,
   sessions,
+  oauthConfig,
+  oauthToken,
   oauthStates,
+  storeOsuToken,
+  pruneSessionsAndOauth,
+  activeRedactions,
+  addRedaction,
+  removeRedaction,
+  clearRedactions,
+  getActiveRedactionsCount,
   HttpError,
   loadStateFromDisk,
   saveStateToDisk,

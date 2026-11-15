@@ -13,6 +13,10 @@ const {
   jobCounters,
   formatBytes,
   safeErrorMessage,
+  addRedaction,
+  removeRedaction,
+  clearRedactions,
+  getActiveRedactionsCount,
   isPrivateIp,
   isPrivateIPv4,
   isPrivateIPv6,
@@ -134,6 +138,36 @@ describe('safeErrorMessage', () => {
   it('корректно обрабатывает пустые ошибки и объекты', () => {
     assert.equal(safeErrorMessage(null), 'Unknown error');
     assert.equal(safeErrorMessage(new Error('Тестовая ошибка')), 'Тестовая ошибка');
+  });
+
+  it('маскирует зарегистрированные секреты и поддерживает счётчик ссылок', () => {
+    clearRedactions();
+    assert.equal(getActiveRedactionsCount(), 0);
+
+    const secret = 'super_secret_osu_token_12345';
+    addRedaction(secret);
+    assert.equal(getActiveRedactionsCount(), 1);
+
+    const errorMsg = safeErrorMessage(new Error(`Failed with ${secret} in payload`));
+    assert.equal(errorMsg, 'Failed with [redacted] in payload');
+
+    // Повторное добавление того же секрета увеличивает ref-count, не создавая дубликатов
+    addRedaction(secret);
+    assert.equal(getActiveRedactionsCount(), 1);
+
+    // Удаление одного использования оставляет секрет замаскированным (ref-count > 0)
+    removeRedaction(secret);
+    assert.equal(getActiveRedactionsCount(), 1);
+    assert.equal(safeErrorMessage(`Token: ${secret}`), 'Token: [redacted]');
+
+    // Полное удаление (ref-count = 0) удаляет секрет из списка маскирования
+    removeRedaction(secret);
+    assert.equal(getActiveRedactionsCount(), 0);
+    assert.equal(safeErrorMessage(`Token: ${secret}`), `Token: ${secret}`);
+
+    // Игнорирует слишком короткие строки (< 4 символов)
+    addRedaction('abc');
+    assert.equal(getActiveRedactionsCount(), 0);
   });
 });
 
