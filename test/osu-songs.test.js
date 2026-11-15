@@ -11,6 +11,7 @@ const http = require('node:http');
 
 const {
   resolveOsuSongsDir,
+  getDefaultOsuPath,
   scanOsuSongsSync,
   getCachedOsuSongs,
   invalidateCachedSongs,
@@ -276,27 +277,85 @@ describe('Интеграция с локальной директорией osu!
     }
   });
 
-  test('resolveOsuSongsDir корректно разрешает путь к Songs и корню игры', () => {
+  test('resolveOsuSongsDir корректно разрешает путь к Songs, корню игры и нестандартным папкам', async () => {
     // 1. Прямой путь к Songs
     assert.equal(resolveOsuSongsDir(mockSongsDir), mockSongsDir);
     // 2. Путь к родительской папке, содержащей Songs
     assert.equal(resolveOsuSongsDir(tempBaseDir), mockSongsDir);
     // 3. Путь в кавычках
     assert.equal(resolveOsuSongsDir(`"${mockSongsDir}"`), mockSongsDir);
-    // 4. Несуществующий путь
+    // 4. Путь со слешем на конце
+    assert.equal(resolveOsuSongsDir(`${tempBaseDir}${path.sep}`), mockSongsDir);
+    // 5. Несуществующий путь
     assert.equal(resolveOsuSongsDir(path.join(tempBaseDir, 'non_existent')), null);
-    // 5. Пустой путь или мусор
+    // 6. Пустой путь или мусор
     assert.equal(resolveOsuSongsDir(''), null);
     assert.equal(resolveOsuSongsDir(null), null);
+
+    // 7. Подпапка songs в нижнем регистре (Linux / Wine)
+    const lowerRoot = path.join(tempBaseDir, 'osu_lowercase');
+    const lowerSongs = path.join(lowerRoot, 'songs');
+    await fs.promises.mkdir(lowerSongs, { recursive: true });
+    assert.equal(resolveOsuSongsDir(lowerRoot)?.toLowerCase(), lowerSongs.toLowerCase());
+    assert.equal(resolveOsuSongsDir(lowerSongs), lowerSongs);
+
+    // 8. Нестандартная директория, содержащая папки с ID карт (правило 4)
+    const customSongs = path.join(tempBaseDir, 'CustomSongsFolder');
+    await fs.promises.mkdir(path.join(customSongs, '77777 Test Beatmap'), { recursive: true });
+    assert.equal(resolveOsuSongsDir(customSongs), customSongs);
   });
 
-  test('resolveOsuSongsDir успешно находит реальную директорию Songs пользователя при наличии', () => {
-    const userPath = 'D:\\Games\\osu!\\Songs';
-    if (fs.existsSync(userPath)) {
-      const resolved = resolveOsuSongsDir(userPath);
-      assert.equal(resolved, userPath);
-      const rootResolved = resolveOsuSongsDir('D:\\Games\\osu!');
-      assert.equal(rootResolved, userPath);
+  test('getDefaultOsuPath учитывает переменные окружения OSU_SONGS_DIR и OSU_PATH', () => {
+    const origSongs = process.env.OSU_SONGS_DIR;
+    const origPath = process.env.OSU_PATH;
+    try {
+      // 1. OSU_SONGS_DIR
+      process.env.OSU_SONGS_DIR = mockSongsDir;
+      delete process.env.OSU_PATH;
+      assert.equal(getDefaultOsuPath(), mockSongsDir);
+
+      // 2. OSU_PATH (указывает на корень с Songs)
+      delete process.env.OSU_SONGS_DIR;
+      process.env.OSU_PATH = tempBaseDir;
+      assert.equal(getDefaultOsuPath(), mockSongsDir);
+
+      // 3. Приоритет: OSU_SONGS_DIR выше, чем OSU_PATH
+      process.env.OSU_SONGS_DIR = mockSongsDir;
+      process.env.OSU_PATH = path.join(tempBaseDir, 'osu_lowercase');
+      assert.equal(getDefaultOsuPath(), mockSongsDir);
+    } finally {
+      if (origSongs !== undefined) process.env.OSU_SONGS_DIR = origSongs;
+      else delete process.env.OSU_SONGS_DIR;
+      if (origPath !== undefined) process.env.OSU_PATH = origPath;
+      else delete process.env.OSU_PATH;
+    }
+  });
+
+  test('getDefaultOsuPath в режиме поиска находит %LOCALAPPDATA% перед другими путями и возвращает корректный fallback', async () => {
+    // В тестовом окружении без опций getDefaultOsuPath возвращает null
+    assert.equal(getDefaultOsuPath(), null);
+
+    const origLocalApp = process.env.LOCALAPPDATA;
+    const mockAppDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'mock-localappdata-'));
+    const mockOsuLocal = path.join(mockAppDir, 'osu!', 'Songs');
+    await fs.promises.mkdir(mockOsuLocal, { recursive: true });
+
+    try {
+      process.env.LOCALAPPDATA = mockAppDir;
+      // При наличии osu! в %LOCALAPPDATA% путь находится первым делом
+      const found = getDefaultOsuPath({ ignoreTestEnv: true });
+      assert.equal(found, mockOsuLocal);
+
+      // Если в папке нет osu, fallback возвращает стандартный путь %LOCALAPPDATA%\osu!
+      const emptyAppDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'empty-localappdata-'));
+      process.env.LOCALAPPDATA = emptyAppDir;
+      const fallback = getDefaultOsuPath({ ignoreTestEnv: true, drives: [] });
+      assert.equal(fallback, path.join(emptyAppDir, 'osu!'));
+      await fs.promises.rm(emptyAppDir, { recursive: true, force: true }).catch(() => {});
+    } finally {
+      if (origLocalApp !== undefined) process.env.LOCALAPPDATA = origLocalApp;
+      else delete process.env.LOCALAPPDATA;
+      await fs.promises.rm(mockAppDir, { recursive: true, force: true }).catch(() => {});
     }
   });
 
