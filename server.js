@@ -223,27 +223,49 @@ async function resumePausedJobWithSettings(res, job, auth, method, noVideo, trig
 }
 
 /**
+ * Отправляет ответ 405 Method Not Allowed с заголовком Allow.
+ * Для запросов OPTIONS возвращает 204 No Content со списком поддерживаемых методов.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @param {string[]} allowed
+ */
+function handleMethodNotAllowed(req, res, allowed) {
+  const allowHeader = allowed.join(', ');
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Allow': allowHeader,
+      'Cache-Control': 'no-store',
+    });
+    return res.end();
+  }
+  return json(res, 405, { error: 'Метод не поддерживается.' }, { 'Allow': allowHeader });
+}
+
+/**
  * Маршрутизатор API-запросов.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
  * @param {URL} url
  */
 async function handleApi(req, res, url) {
-  if (req.method === 'GET' && url.pathname === '/api/osu/settings') {
-    return json(res, 200, getOsuSettings());
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/osu/settings') {
-    const body = await readJson(req);
-    try {
-      const updated = await saveOsuSettings(body);
-      return json(res, 200, updated);
-    } catch (err) {
-      return json(res, 400, { error: safeErrorMessage(err) });
+  if (url.pathname === '/api/osu/settings') {
+    if (req.method === 'GET') {
+      return json(res, 200, getOsuSettings());
     }
+    if (req.method === 'POST') {
+      const body = await readJson(req);
+      try {
+        const updated = await saveOsuSettings(body);
+        return json(res, 200, updated);
+      } catch (err) {
+        return json(res, 400, { error: safeErrorMessage(err) });
+      }
+    }
+    return handleMethodNotAllowed(req, res, ['GET', 'POST']);
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/osu/rescan') {
+  if (url.pathname === '/api/osu/rescan') {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     const settings = getOsuSettings();
     if (!settings.valid || !settings.songsDir) {
       return json(res, 400, { error: 'Директория Songs не настроена или недоступна.' });
@@ -253,14 +275,18 @@ async function handleApi(req, res, url) {
     return json(res, 200, { count: songs.size, songsCount: songs.size });
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/osu/check') {
+  if (url.pathname === '/api/osu/check') {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     const body = await readJson(req);
     const setIds = Array.isArray(body?.setIds) ? body.setIds : [];
     const classification = classifyCollectionSets(setIds);
     return json(res, 200, classification);
   }
 
-  if (url.pathname === '/api/osu/browse' && (req.method === 'POST' || req.method === 'GET')) {
+  if (url.pathname === '/api/osu/browse') {
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      return handleMethodNotAllowed(req, res, ['GET', 'POST']);
+    }
     let initialPath = '';
     if (req.method === 'POST') {
       const body = await readJson(req).catch(() => ({}));
@@ -277,13 +303,15 @@ async function handleApi(req, res, url) {
     }
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/mirrors') {
+  if (url.pathname === '/api/mirrors') {
+    if (req.method !== 'GET') return handleMethodNotAllowed(req, res, ['GET']);
     return json(res, 200, {
       mirrors: MIRRORS.map(mirror => ({ id: mirror.id, label: mirror.label, cooldownMs: mirrorCooldownRemaining(mirror) })),
     });
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/oauth/status') {
+  if (url.pathname === '/api/oauth/status') {
+    if (req.method !== 'GET') return handleMethodNotAllowed(req, res, ['GET']);
     const status = oauthStatus();
     const oauthActive = isOAuthEnabled();
     return json(res, 200, {
@@ -298,7 +326,8 @@ async function handleApi(req, res, url) {
     });
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/oauth/config') {
+  if (url.pathname === '/api/oauth/config') {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     if (!isOAuthEnabled()) {
       return json(res, 403, { error: 'OAuth-авторизация отключена на сервере (запустите с ENABLE_OAUTH=1).' });
     }
@@ -333,7 +362,8 @@ async function handleApi(req, res, url) {
     return json(res, 200, oauthStatus());
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/oauth/start') {
+  if (url.pathname === '/api/oauth/start') {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     if (!isOAuthEnabled()) {
       return json(res, 403, { error: 'OAuth-авторизация отключена на сервере (запустите с ENABLE_OAUTH=1).' });
     }
@@ -350,7 +380,8 @@ async function handleApi(req, res, url) {
     return json(res, 200, { authorizeUrl: buildAuthorizeUrl(state) });
   }
 
-  if (req.method === 'DELETE' && url.pathname === '/api/oauth/disconnect') {
+  if (url.pathname === '/api/oauth/disconnect') {
+    if (req.method !== 'DELETE') return handleMethodNotAllowed(req, res, ['DELETE']);
     if (!isOAuthEnabled()) {
       return json(res, 403, { error: 'OAuth-авторизация отключена на сервере.' });
     }
@@ -367,46 +398,48 @@ async function handleApi(req, res, url) {
     return json(res, 200, oauthStatus());
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/session') {
-    const body = await readJson(req);
-    const session = typeof body.session === 'string' ? body.session.trim() : '';
-    if (session.length < 20 || session.length > 4096 || /[;\r\n]/.test(session)) {
-      return json(res, 400, { error: 'Проверьте значение cookie osu_session.' });
+  if (url.pathname === '/api/session') {
+    if (req.method === 'GET') {
+      return json(res, 200, { connected: Boolean(getSession(req)) });
     }
-    const cookies = parseCookies(req.headers.cookie);
-    const existingToken = cookies['osu_collector_token'];
-    if (existingToken) {
-      const existing = sessions.get(existingToken);
-      if (existing) {
-        removeRedaction(existing.value);
-        sessions.delete(existingToken);
+    if (req.method === 'POST') {
+      const body = await readJson(req);
+      const session = typeof body.session === 'string' ? body.session.trim() : '';
+      if (session.length < 20 || session.length > 4096 || /[;\r\n]/.test(session)) {
+        return json(res, 400, { error: 'Проверьте значение cookie osu_session.' });
       }
+      const cookies = parseCookies(req.headers.cookie);
+      const existingToken = cookies['osu_collector_token'];
+      if (existingToken) {
+        const existing = sessions.get(existingToken);
+        if (existing) {
+          removeRedaction(existing.value);
+          sessions.delete(existingToken);
+        }
+      }
+      const token = crypto.randomBytes(32).toString('hex');
+      sessions.set(token, { value: session, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
+      addRedaction(session);
+      log('info', 'session.saved');
+      setTokenCookie(res, req, token);
+      return json(res, 200, { connected: true });
     }
-    const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, { value: session, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
-    addRedaction(session);
-    log('info', 'session.saved');
-    setTokenCookie(res, req, token);
-    return json(res, 200, { connected: true });
-  }
-
-  if (req.method === 'DELETE' && url.pathname === '/api/session') {
-    const token = parseCookies(req.headers.cookie)['osu_collector_token'];
-    if (token) {
-      const entry = sessions.get(token);
-      if (entry) removeRedaction(entry.value);
-      sessions.delete(token);
+    if (req.method === 'DELETE') {
+      const token = parseCookies(req.headers.cookie)['osu_collector_token'];
+      if (token) {
+        const entry = sessions.get(token);
+        if (entry) removeRedaction(entry.value);
+        sessions.delete(token);
+      }
+      log('info', 'session.cleared', { hadSession: Boolean(token) });
+      res.setHeader('Set-Cookie', `osu_collector_token=; ${cookieOptions(req, 0)}`);
+      return json(res, 200, { connected: false });
     }
-    log('info', 'session.cleared', { hadSession: Boolean(token) });
-    res.setHeader('Set-Cookie', `osu_collector_token=; ${cookieOptions(req, 0)}`);
-    return json(res, 200, { connected: false });
+    return handleMethodNotAllowed(req, res, ['GET', 'POST', 'DELETE']);
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/session') {
-    return json(res, 200, { connected: Boolean(getSession(req)) });
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/collections') {
+  if (url.pathname === '/api/collections') {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     const body = await readJson(req);
     const collectionId = extractCollectionId(body?.url);
     const data = await fetchCollection(collectionId);
@@ -427,8 +460,9 @@ async function handleApi(req, res, url) {
     });
   }
 
-  const collectionMatch = req.method === 'GET' && url.pathname.match(/^\/api\/collections\/([0-9]+)$/);
+  const collectionMatch = url.pathname.match(/^\/api\/collections\/([0-9]+)$/);
   if (collectionMatch) {
+    if (req.method !== 'GET') return handleMethodNotAllowed(req, res, ['GET']);
     const collectionId = collectionMatch[1];
     const data = await fetchCollection(collectionId);
     const { installedSetIds, downloadedSetIds } = classifyCollectionSets(data.setIds);
@@ -448,7 +482,8 @@ async function handleApi(req, res, url) {
     });
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/downloads') {
+  if (url.pathname === '/api/downloads') {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     const body = await readJson(req);
     const requestedMethod = url.searchParams.get('method') || (typeof body?.method === 'string' ? body.method : null);
     const method = requestedMethod === 'oauth' ? 'oauth' : requestedMethod === 'session' ? 'session' : 'mirror';
@@ -535,7 +570,8 @@ async function handleApi(req, res, url) {
   }
 
   const resumeMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/resume$/);
-  if (req.method === 'POST' && resumeMatch) {
+  if (resumeMatch) {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     const job = jobs.get(resumeMatch[1]);
     if (!job) return json(res, 404, { error: 'Загрузка не найдена.' });
     const currentActive = getActiveJob();
@@ -573,7 +609,8 @@ async function handleApi(req, res, url) {
   }
 
   const retryFailedMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/retry-failed$/);
-  if (req.method === 'POST' && retryFailedMatch) {
+  if (retryFailedMatch) {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     const job = jobs.get(retryFailedMatch[1]);
     if (!job) return json(res, 404, { error: 'Загрузка не найдена.' });
     const currentActive = getActiveJob();
@@ -631,7 +668,8 @@ async function handleApi(req, res, url) {
     return json(res, 202, safeJobForClient(job));
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/downloads/active') {
+  if (url.pathname === '/api/downloads/active') {
+    if (req.method !== 'GET') return handleMethodNotAllowed(req, res, ['GET']);
     const active = getActiveJob();
     if (!active) {
       return json(res, 404, { error: 'Нет активной загрузки.' });
@@ -640,7 +678,8 @@ async function handleApi(req, res, url) {
   }
 
   const eventsMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/events$/);
-  if (req.method === 'GET' && (eventsMatch || url.pathname === '/api/downloads/events')) {
+  if (eventsMatch || url.pathname === '/api/downloads/events') {
+    if (req.method !== 'GET') return handleMethodNotAllowed(req, res, ['GET']);
     const targetId = eventsMatch ? eventsMatch[1] : (url.searchParams.get('id') || getActiveJob()?.id);
     if (!targetId) {
       return json(res, 400, { error: 'Не указан идентификатор загрузки.' });
@@ -704,15 +743,10 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const jobMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)(?:\/cancel)?$/);
-  if (req.method === 'GET' && jobMatch && !url.pathname.endsWith('/cancel')) {
-    const job = jobs.get(jobMatch[1]);
-    if (!job) return json(res, 404, { error: 'Загрузка не найдена.' });
-    return json(res, 200, safeJobForClient(job));
-  }
-
-  if (req.method === 'POST' && jobMatch && url.pathname.endsWith('/cancel')) {
-    const job = jobs.get(jobMatch[1]);
+  const cancelMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)\/cancel$/);
+  if (cancelMatch) {
+    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
+    const job = jobs.get(cancelMatch[1]);
     if (!job) return json(res, 404, { error: 'Загрузка не найдена.' });
     if (['running', 'queued', 'paused', 'finished_with_errors'].includes(job.status)) {
       job.status = 'cancelled';
@@ -741,6 +775,14 @@ async function handleApi(req, res, url) {
     return json(res, 200, safeJobForClient(job));
   }
 
+  const jobMatch = url.pathname.match(/^\/api\/downloads\/([a-f0-9]+)$/);
+  if (jobMatch) {
+    if (req.method !== 'GET') return handleMethodNotAllowed(req, res, ['GET']);
+    const job = jobs.get(jobMatch[1]);
+    if (!job) return json(res, 404, { error: 'Загрузка не найдена.' });
+    return json(res, 200, safeJobForClient(job));
+  }
+
   return json(res, 404, { error: 'API-маршрут не найден.' });
 }
 
@@ -748,7 +790,8 @@ const server = http.createServer(async (req, res) => {
   const requestStartedAt = Date.now();
   res.on('finish', () => {
     const requestUrl = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
-    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'debug';
+    const isExpectedNotFound = req.method === 'GET' && requestUrl.pathname === '/api/downloads/active' && res.statusCode === 404;
+    const level = res.statusCode >= 500 ? 'error' : (res.statusCode >= 400 && !isExpectedNotFound) ? 'warn' : 'debug';
     log(level, 'http.request.completed', {
       method: req.method,
       path: requestUrl.pathname,
@@ -772,7 +815,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/oauth/callback') {
       if (req.method !== 'GET') {
-        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET' });
         return res.end('Method not allowed');
       }
       return await handleOauthCallback(req, res, url);
@@ -781,26 +824,34 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
 
     if (url.pathname === '/favicon.ico') {
+      if (!['GET', 'HEAD'].includes(req.method)) {
+        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' });
+        return res.end('Method not allowed');
+      }
       res.writeHead(204, { 'Cache-Control': 'no-store' });
       return res.end();
     }
 
-    if (!['GET', 'HEAD'].includes(req.method) || !['/', '/index.html', '/app.js'].includes(url.pathname)) {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end('Not found');
+    if (['/', '/index.html', '/app.js'].includes(url.pathname)) {
+      if (!['GET', 'HEAD'].includes(req.method)) {
+        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' });
+        return res.end('Method not allowed');
+      }
+      const asset = url.pathname === '/app.js' ? 'app.js' : 'index.html';
+      const content = await fs.promises.readFile(path.join(ROOT, asset));
+      res.writeHead(200, {
+        'Content-Type': asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+      });
+      return res.end(content);
     }
 
-    const asset = url.pathname === '/app.js' ? 'app.js' : 'index.html';
-    const content = await fs.promises.readFile(path.join(ROOT, asset));
-    res.writeHead(200, {
-      'Content-Type': asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
-      'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
-      'Referrer-Policy': 'no-referrer',
-    });
-    res.end(content);
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Not found');
   } catch (error) {
     const err = /** @type {any} */ (error);
     log('error', 'http.request.failed', { method: req.method, path: url.pathname, error: safeErrorMessage(error) });
@@ -987,4 +1038,5 @@ module.exports = {
   resetBootstrap,
   startServer,
   waitForPendingSaveState,
+  handleMethodNotAllowed,
 };
