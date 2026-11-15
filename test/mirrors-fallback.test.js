@@ -11,6 +11,13 @@ const {
   downloadFromMirrors,
   MIRRORS,
   mirrorCooldowns,
+  parseRetryAfter,
+  getMirrorCooldownDefaultMs,
+  getMirrorCooldownMaxMs,
+  getMirrorCooldownWaitMaxMs,
+  MIRROR_COOLDOWN_DEFAULT_MS,
+  MIRROR_COOLDOWN_MAX_MS,
+  MIRROR_COOLDOWN_WAIT_MAX_MS,
 } = require('../server.js');
 
 describe('Интеграционные тесты fallback между зеркалами', () => {
@@ -177,5 +184,147 @@ describe('Интеграционные тесты fallback между зерка
 
     assert.ok(mirrorCooldowns.has('m_429_a'));
     assert.ok(mirrorCooldowns.has('m_429_b'));
+  });
+
+  it('downloader.js использует динамический MIRROR_COOLDOWN_DEFAULT_MS при 429 без Retry-After', async () => {
+    const prevDefault = process.env.MIRROR_COOLDOWN_DEFAULT_MS;
+    const prevWait = process.env.MIRROR_COOLDOWN_WAIT_MAX_MS;
+    process.env.MIRROR_COOLDOWN_DEFAULT_MS = '2500'; // 2.5 секунды
+    process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = '500'; // лимит ожидания в цикле ниже кулдауна, чтобы сразу отложить задачу
+    try {
+      mirrorCooldowns.clear();
+      // Сервер, возвращающий 429 БЕЗ заголовка Retry-After
+      const s429NoHeader = http.createServer((req, res) => {
+        res.writeHead(429, { 'Content-Type': 'text/plain' });
+        res.end('Rate Limited Without Header');
+      });
+      await new Promise(r => s429NoHeader.listen(0, '127.0.0.1', () => r(null)));
+      const port429NoHeader = /** @type {import('node:net').AddressInfo} */ (s429NoHeader.address()).port;
+
+      MIRRORS.length = 0;
+      MIRRORS.push(
+        { id: 'm_dyn_default', label: 'Mirror Dynamic Default', build: id => `http://127.0.0.1:${port429NoHeader}/d/${id}` }
+      );
+
+      const job = {
+        id: 'test_job_dyn_default',
+        status: 'running',
+        doneIds: new Set(),
+        skipIds: new Set(),
+        errIds: new Set(),
+      };
+
+      const start = Date.now();
+      await assert.rejects(
+        async () => { await downloadFromMirrors(99904, job); },
+        (err) => {
+          const e = /** @type {any} */ (err);
+          return e.allCooldown === true;
+        }
+      );
+
+      assert.ok(mirrorCooldowns.has('m_dyn_default'));
+      const until = mirrorCooldowns.get('m_dyn_default');
+      const cooldownMs = until - start;
+      // Должно быть около 2500 мс (с небольшим допуском), а не захардкоженные 60 000 мс!
+      assert.ok(cooldownMs >= 2000 && cooldownMs <= 3500, `Ожидался кулдаун ~2500мс, фактически: ${cooldownMs}мс`);
+
+      await new Promise(r => s429NoHeader.close(r));
+    } finally {
+      if (prevDefault !== undefined) process.env.MIRROR_COOLDOWN_DEFAULT_MS = prevDefault;
+      else delete process.env.MIRROR_COOLDOWN_DEFAULT_MS;
+      if (prevWait !== undefined) process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = prevWait;
+      else delete process.env.MIRROR_COOLDOWN_WAIT_MAX_MS;
+    }
+  });
+
+  it('downloader.js соблюдает динамический лимит ожидания в цикле MIRROR_COOLDOWN_WAIT_MAX_MS', async () => {
+    const prevEnv = process.env.MIRROR_COOLDOWN_WAIT_MAX_MS;
+    try {
+      // 1. Лимит ожидания 1000 мс: кулдаун 4000 мс превышает лимит -> не ждём в цикле, сразу allCooldown
+      process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = '1000';
+      mirrorCooldowns.clear();
+      mirrorCooldowns.set('m_wait_test', Date.now() + 4000);
+
+      MIRRORS.length = 0;
+      MIRRORS.push(
+        { id: 'm_wait_test', label: 'Wait Test Mirror', build: id => `http://127.0.0.1:${port3}/d/${id}` }
+      );
+
+      const job = {
+        id: 'test_job_wait_max',
+        status: 'running',
+        doneIds: new Set(),
+        skipIds: new Set(),
+        errIds: new Set(),
+      };
+
+      const start = Date.now();
+      await assert.rejects(
+        async () => { await downloadFromMirrors(99905, job); },
+        (err) => {
+          const e = /** @type {any} */ (err);
+          return e.allCooldown === true;
+        }
+      );
+      const elapsed = Date.now() - start;
+      assert.ok(elapsed < 500, `Не должно ждать 4 секунды, если лимит ожидания 1000мс. Заняло ${elapsed}мс`);
+
+      // 2. Лимит ожидания 3000 мс: кулдаун 200 мс укладывается в лимит -> дожидается и успешно скачивает
+      process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = '3000';
+      mirrorCooldowns.clear();
+      mirrorCooldowns.set('m_wait_test', Date.now() + 200);
+
+      await downloadFromMirrors(99906, job);
+      assert.ok(job.doneIds.has(99906), 'Набор должен быть успешно скачан после короткого ожидания');
+    } finally {
+      if (prevEnv !== undefined) process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = prevEnv;
+      else delete process.env.MIRROR_COOLDOWN_WAIT_MAX_MS;
+    }
+  });
+
+  it('mirrors.js парсит Retry-After с учётом динамического потолка MIRROR_COOLDOWN_MAX_MS', () => {
+    const prevEnv = process.env.MIRROR_COOLDOWN_MAX_MS;
+    try {
+      process.env.MIRROR_COOLDOWN_MAX_MS = '12000'; // 12 секунд потолок
+      // Потолок должен ограничить 1 час (3600с) до 12000 мс, а не до дефолтных 15 минут
+      const capped = parseRetryAfter('3600');
+      assert.equal(capped, 12000);
+
+      // Маленькие значения не должны обрезаться
+      const normal = parseRetryAfter('5');
+      assert.equal(normal, 5000);
+    } finally {
+      if (prevEnv !== undefined) process.env.MIRROR_COOLDOWN_MAX_MS = prevEnv;
+      else delete process.env.MIRROR_COOLDOWN_MAX_MS;
+    }
+  });
+
+  it('геттеры и константы кулдаунов зеркал возвращают актуальные значения конфигурации', () => {
+    const prevDefault = process.env.MIRROR_COOLDOWN_DEFAULT_MS;
+    const prevMax = process.env.MIRROR_COOLDOWN_MAX_MS;
+    const prevWait = process.env.MIRROR_COOLDOWN_WAIT_MAX_MS;
+    try {
+      process.env.MIRROR_COOLDOWN_DEFAULT_MS = '5000';
+      process.env.MIRROR_COOLDOWN_MAX_MS = '20000';
+      process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = '8000';
+
+      assert.equal(getMirrorCooldownDefaultMs(), 5000);
+      assert.equal(getMirrorCooldownMaxMs(), 20000);
+      assert.equal(getMirrorCooldownWaitMaxMs(), 8000);
+
+      // Свойство-геттер на объекте конфигурации также динамически возвращает обновлённое значение
+      const config = require('../lib/config.js');
+      assert.equal(config.MIRROR_COOLDOWN_DEFAULT_MS, 5000);
+      assert.equal(config.MIRROR_COOLDOWN_MAX_MS, 20000);
+      assert.equal(config.MIRROR_COOLDOWN_WAIT_MAX_MS, 8000);
+    } finally {
+      if (prevDefault !== undefined) process.env.MIRROR_COOLDOWN_DEFAULT_MS = prevDefault;
+      else delete process.env.MIRROR_COOLDOWN_DEFAULT_MS;
+      if (prevMax !== undefined) process.env.MIRROR_COOLDOWN_MAX_MS = prevMax;
+      else delete process.env.MIRROR_COOLDOWN_MAX_MS;
+      if (prevWait !== undefined) process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = prevWait;
+      else delete process.env.MIRROR_COOLDOWN_WAIT_MAX_MS;
+    }
   });
 });
