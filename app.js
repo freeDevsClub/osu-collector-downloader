@@ -100,6 +100,8 @@ if (checkboxNoVideo) {
 
 let mapListRenderId = 0;
 const mapElementsById = new Map();
+/** @type {Array<{ item: HTMLElement, title: HTMLElement, creator: HTMLElement | null, badge: HTMLElement | null, currentId: number | undefined }>} */
+let mapListByIndex = [];
 let metadataPollTimer = null;
 let metadataPollInFlight = false;
 let pollingCollectionId = null;
@@ -442,19 +444,23 @@ function renderMapList(maps = []) {
   const list = byId('map-list');
   list.replaceChildren();
   mapElementsById.clear();
+  mapListByIndex = [];
   const CHUNK_SIZE = 250;
   let index = 0;
   const renderChunk = () => {
     if (renderId !== mapListRenderId) return;
     const fragment = document.createDocumentFragment();
-    for (const map of maps.slice(index, index + CHUNK_SIZE)) {
+    const end = Math.min(maps.length, index + CHUNK_SIZE);
+    for (let i = index; i < end; i++) {
+      const map = maps[i];
+      const isPending = !map?.title && !map?.artist;
       const item = document.createElement('li');
-      item.className = 'map-id map-item';
+      item.className = 'map-id map-item' + (isPending ? ' is-pending' : '');
       const head = document.createElement('div');
       head.className = 'map-item-head';
       const title = document.createElement('span');
       title.className = 'map-title';
-      title.textContent = map?.label || `Набор ${map?.id ?? ''}`;
+      title.textContent = isPending ? `Набор ${map?.id ?? ''}` : (map?.label || `Набор ${map?.id ?? ''}`);
       head.append(title);
       const badge = document.createElement('span');
       updateMapBadge(badge, map?.id);
@@ -467,8 +473,10 @@ function renderMapList(maps = []) {
         creator.textContent = `маппер: ${map.creator}`;
         item.append(creator);
       }
+      const record = { item, title, creator, badge, currentId: map?.id };
+      mapListByIndex[i] = record;
       if (map?.id) {
-        mapElementsById.set(map.id, { item, title, creator, badge });
+        mapElementsById.set(map.id, record);
       }
       fragment.append(item);
     }
@@ -485,10 +493,26 @@ function renderMapList(maps = []) {
 }
 
 function updateMapListLabels(maps = []) {
-  for (const map of maps) {
-    if (!map || !map.id) continue;
-    const elements = mapElementsById.get(map.id);
+  for (let i = 0; i < maps.length; i++) {
+    const map = maps[i];
+    if (!map) continue;
+    const elements = mapListByIndex[i];
     if (!elements) continue;
+
+    // Если у этой строки изменился setId (при перестановке незаполненных элементов)
+    if (elements.currentId !== map.id) {
+      if (elements.currentId) mapElementsById.delete(elements.currentId);
+      elements.currentId = map.id;
+      if (map.id) mapElementsById.set(map.id, elements);
+    }
+
+    const isPending = !map.title && !map.artist;
+    if (isPending) {
+      elements.item.classList.add('is-pending');
+    } else {
+      elements.item.classList.remove('is-pending');
+    }
+
     const expectedLabel = map.label || `Набор ${map.id}`;
     if (elements.title.textContent !== expectedLabel) {
       elements.title.textContent = expectedLabel;
@@ -509,6 +533,9 @@ function updateMapListLabels(maps = []) {
         elements.item.append(creator);
         elements.creator = creator;
       }
+    } else if (elements.creator) {
+      elements.creator.remove();
+      elements.creator = null;
     }
   }
 }

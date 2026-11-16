@@ -512,4 +512,98 @@ describe('Мгновенный старт и ленивая подгрузка �
     assert.equal(getData.metadataDegraded, true);
     assert.equal(getData.metadataProgress, 0);
   });
+
+  it('выстраивает наборы строго сверху вниз в порядке поступления из beatmapsV2 с дедупликацией трудностей', async () => {
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes('/api/collections/99009/beatmapsV2')) {
+        return new Response(
+          JSON.stringify({
+            beatmaps: [
+              // Трудность 1 набора 200 (A Song)
+              { beatmapset_id: 200, beatmapset: { title: 'A Song', artist: 'Artist A' } },
+              // Трудность 2 того же набора 200 (дубликат по setId, должен быть дедуплицирован)
+              { beatmapset_id: 200, beatmapset: { title: 'A Song', artist: 'Artist A' } },
+              // Трудность набора 100 (B Song)
+              { beatmapset_id: 100, beatmapset: { title: 'B Song', artist: 'Artist B' } },
+              // Трудность набора 300 (C Song)
+              { beatmapset_id: 300, beatmapset: { title: 'C Song', artist: 'Artist C' } },
+            ],
+            hasMore: false,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/collections/99009')) {
+        return new Response(
+          JSON.stringify({
+            id: 99009,
+            name: 'Top Down Order Collection',
+            beatmapCount: 4,
+            // В сыром заголовке порядок хаотичный (300, 100, 200)
+            beatmapsets: [{ id: 300 }, { id: 100 }, { id: 200 }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return originalFetch(input, init);
+    };
+
+    const snapshot = await fetchCollection('99009');
+    if (snapshot.metadataPromise) await snapshot.metadataPromise;
+
+    assert.equal(snapshot.metadataComplete, true);
+    assert.equal(snapshot.count, 3);
+    assert.equal(snapshot.maps.length, 3);
+
+    // Порядок должен быть строго по beatmapsV2 (200 -> 100 -> 300), а не по сырому beatmapsets (300 -> 100 -> 200)
+    assert.deepEqual(snapshot.setIds, [200, 100, 300]);
+    assert.equal(snapshot.maps[0].id, 200);
+    assert.equal(snapshot.maps[0].label, 'Artist A — A Song');
+    assert.equal(snapshot.maps[1].id, 100);
+    assert.equal(snapshot.maps[1].label, 'Artist B — B Song');
+    assert.equal(snapshot.maps[2].id, 300);
+    assert.equal(snapshot.maps[2].label, 'Artist C — C Song');
+  });
+
+  it('сохраняет в хвосте наборы, отсутствующие в beatmapsV2 (удалённые или скрытые карты)', async () => {
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes('/api/collections/99010/beatmapsV2')) {
+        return new Response(
+          JSON.stringify({
+            // V2 отдаёт только набор 500
+            beatmaps: [{ beatmapset_id: 500, beatmapset: { title: 'Available Song', artist: 'Artist 5' } }],
+            hasMore: false,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/collections/99010')) {
+        return new Response(
+          JSON.stringify({
+            id: 99010,
+            name: 'Partially Missing Collection',
+            beatmapCount: 2,
+            // В коллекции 2 набора: 500 и 999 (999 удалён или отсутствует в V2)
+            beatmapsets: [{ id: 999 }, { id: 500 }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return originalFetch(input, init);
+    };
+
+    const snapshot = await fetchCollection('99010');
+    if (snapshot.metadataPromise) await snapshot.metadataPromise;
+
+    // В коллекции должны остаться оба набора: 500 впереди с названием, а 999 в хвосте с заглушкой
+    assert.equal(snapshot.count, 2);
+    assert.equal(snapshot.maps.length, 2);
+    assert.deepEqual(snapshot.setIds, [500, 999]);
+    assert.equal(snapshot.maps[0].id, 500);
+    assert.equal(snapshot.maps[0].label, 'Artist 5 — Available Song');
+    assert.equal(snapshot.maps[1].id, 999);
+    assert.equal(snapshot.maps[1].label, 'Набор 999');
+  });
 });
