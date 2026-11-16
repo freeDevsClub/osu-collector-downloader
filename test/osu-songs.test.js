@@ -13,7 +13,9 @@ const {
   resolveOsuSongsDir,
   getDefaultOsuPath,
   scanOsuSongsSync,
+  scanOsuSongsAsync,
   getCachedOsuSongs,
+  getCachedOsuSongsAsync,
   invalidateCachedSongs,
   addInstalledSetId,
   loadSettings,
@@ -387,6 +389,29 @@ describe('Интеграция с локальной директорией osu!
     assert.equal(s2.has(10005), true);
   });
 
+  test('scanOsuSongsAsync и getCachedOsuSongsAsync извлекают карты неблокирующим способом', async () => {
+    invalidateCachedSongs();
+    const asyncSet = await scanOsuSongsAsync(mockSongsDir);
+    const syncSet = scanOsuSongsSync(mockSongsDir);
+
+    assert.deepEqual(Array.from(asyncSet).sort(), Array.from(syncSet).sort());
+    assert.equal(asyncSet.has(10001), true);
+    assert.equal(asyncSet.has(10002), true);
+    assert.equal(asyncSet.has(10003), true);
+    assert.equal(asyncSet.has(10004), true);
+    assert.equal(asyncSet.has(99999), false);
+    assert.equal(asyncSet.has(2024), false);
+
+    // Параллельные вызовы getCachedOsuSongsAsync
+    invalidateCachedSongs();
+    const [p1, p2] = await Promise.all([
+      getCachedOsuSongsAsync(mockSongsDir),
+      getCachedOsuSongsAsync(mockSongsDir),
+    ]);
+    assert.equal(p1, p2, 'Параллельные вызовы должны возвращать общий Set');
+    assert.equal(p1.size, 4);
+  });
+
   test('buildBeatmapFolderName формирует безопасные имена папок для Windows и очищает хвостовые точки/пробелы', () => {
     const n1 = buildBeatmapFolderName(12345, { artist: 'Artist / Slash', title: 'Title : Colon * Star ? Question " Quote < > |' });
     assert.equal(n1, '12345 Artist _ Slash - Title _ Colon _ Star _ Question _ Quote _ _ _');
@@ -498,6 +523,45 @@ describe('Интеграция с локальной директорией osu!
     // Файл evil.txt не должен появиться за пределами safeTarget
     assert.equal(fs.existsSync(path.join(tempBaseDir, 'evil.txt')), false);
     assert.equal(fs.existsSync(path.join(safeTarget, 'valid.txt')), true);
+  });
+
+  test('extractZip использует асинхронную декомпрессию и потоковое чтение через FileHandle', async () => {
+    const streamTarget = path.join(tempBaseDir, 'stream_extracted');
+    const zipBuf = createMockZip({
+      'file1.txt': 'hello world async deflate 1',
+      'file2.txt': 'hello world async deflate 2',
+    });
+    const zipPath = path.join(tempBaseDir, 'stream_test.osz');
+    await fs.promises.writeFile(zipPath, zipBuf);
+
+    // Шпионим на fs.promises.readFile, чтобы гарантировать, что файл НЕ читается целиком в память
+    let readFileCalled = false;
+    const origReadFile = fs.promises.readFile;
+    fs.promises.readFile = async function (...args) {
+      if (args[0] === zipPath) readFileCalled = true;
+      return origReadFile.apply(this, args);
+    };
+
+    // Шпионим на zlib.inflateRaw, чтобы гарантировать вызов асинхронной декомпрессии
+    let inflateRawCalled = false;
+    const origInflateRaw = zlib.inflateRaw;
+    // @ts-ignore
+    zlib.inflateRaw = function (...args) {
+      inflateRawCalled = true;
+      return origInflateRaw.apply(this, args);
+    };
+
+    try {
+      const count = await extractZip(zipPath, streamTarget);
+      assert.equal(count, 2);
+      assert.equal(readFileCalled, false, 'extractZip не должен вызывать fs.promises.readFile целиком');
+      assert.equal(inflateRawCalled, true, 'extractZip должен вызывать асинхронный zlib.inflateRaw');
+      assert.equal(fs.existsSync(path.join(streamTarget, 'file1.txt')), true);
+      assert.equal(fs.existsSync(path.join(streamTarget, 'file2.txt')), true);
+    } finally {
+      fs.promises.readFile = origReadFile;
+      zlib.inflateRaw = origInflateRaw;
+    }
   });
 
   test('moveFile перемещает файл даже при кросс-устройствах', async () => {

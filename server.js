@@ -128,6 +128,7 @@ const {
   saveSettings: saveOsuSettings,
   classifyCollectionSets,
   getCachedOsuSongs,
+  getCachedOsuSongsAsync,
   selectFolderDialog,
 } = require('./lib/osu.js');
 
@@ -273,7 +274,7 @@ async function handleApi(req, res, url) {
     if (!settings.valid || !settings.songsDir) {
       return json(res, 400, { error: 'Директория Songs не настроена или недоступна.' });
     }
-    const songs = getCachedOsuSongs(settings.songsDir, true);
+    const songs = await getCachedOsuSongsAsync(settings.songsDir, true);
     settings.songsCount = songs.size;
     return json(res, 200, { count: songs.size, songsCount: songs.size });
   }
@@ -893,6 +894,10 @@ function bootstrapServer() {
       await fs.promises.mkdir(getDownloadsDir(), { recursive: true });
       await cleanupStalePartFiles();
       await loadStateFromDisk();
+      const osuSettings = getOsuSettings();
+      if (osuSettings?.valid && osuSettings?.songsDir) {
+        await getCachedOsuSongsAsync(osuSettings.songsDir).catch(() => {});
+      }
     })();
   }
   return bootstrapPromise;
