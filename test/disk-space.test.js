@@ -3,6 +3,7 @@
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const nodeFs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
@@ -11,12 +12,19 @@ const {
   ensureDiskSpace,
   isSameFileSystem,
   jobFilePath,
+  getCachedDownloadedSets,
+  getCachedDownloadedSetsAsync,
+  addDownloadedSetId,
+  removeDownloadedSetId,
+  invalidateCachedDownloads,
 } = require('../lib/downloader.js');
 const {
   saveSettings: saveOsuSettings,
   invalidateCachedSongs,
   loadSettings,
+  classifyCollectionSets,
 } = require('../lib/osu.js');
+const { runJob } = require('../lib/jobs.js');
 const { HttpError } = require('../lib/config.js');
 
 describe('Оценка и проверка свободного места на диске (Disk Space Checks)', () => {
@@ -36,11 +44,13 @@ describe('Оценка и проверка свободного места на 
     process.env.DOWNLOADS_DIR = tempDownloadsDir;
 
     invalidateCachedSongs();
+    invalidateCachedDownloads();
   });
 
   afterEach(async () => {
     process.env.DOWNLOADS_DIR = originalDownloadsEnv;
     invalidateCachedSongs();
+    invalidateCachedDownloads();
     loadSettings();
     try {
       await fs.rm(tempBaseDir, { recursive: true, force: true });
@@ -158,5 +168,98 @@ describe('Оценка и проверка свободного места на 
     assert.equal(isSameFileSystem('C:\\downloads', 'C:\\Songs'), true);
     assert.equal(isSameFileSystem('C:\\downloads', 'D:\\Songs'), false);
     assert.equal(isSameFileSystem('D:\\downloads', 'D:\\Games\\osu!\\Songs'), true);
+  });
+
+  it('getCachedDownloadedSets / getCachedDownloadedSetsAsync корректно фильтрует файлы по размеру и маске', async () => {
+    // 101.osz: валидный файл > 0 байт
+    await fs.writeFile(path.join(tempDownloadsDir, '101.osz'), Buffer.alloc(1024));
+    // 102.osz: пустой файл 0 байт (должен игнорироваться)
+    await fs.writeFile(path.join(tempDownloadsDir, '102.osz'), Buffer.alloc(0));
+    // 103.part: временный файл (должен игнорироваться)
+    await fs.writeFile(path.join(tempDownloadsDir, '103.part'), Buffer.alloc(1024));
+    // invalid.osz: нечисловое имя (должно игнорироваться)
+    await fs.writeFile(path.join(tempDownloadsDir, 'invalid.osz'), Buffer.alloc(1024));
+    // 104.osz: папка с именем .osz (должна игнорироваться)
+    await fs.mkdir(path.join(tempDownloadsDir, '104.osz'));
+
+    const syncSets = getCachedDownloadedSets(tempDownloadsDir, true);
+    assert.equal(syncSets.has(101), true);
+    assert.equal(syncSets.has(102), false, '0-байтовый файл не должен считаться скачанным');
+    assert.equal(syncSets.has(103), false, '.part файл не должен считаться скачанным');
+    assert.equal(syncSets.has(104), false, 'директория не должна считаться скачанным набором');
+    assert.equal(syncSets.size, 1);
+
+    const asyncSets = await getCachedDownloadedSetsAsync(tempDownloadsDir, true);
+    assert.equal(asyncSets.has(101), true);
+    assert.equal(asyncSets.has(102), false);
+    assert.equal(asyncSets.size, 1);
+  });
+
+  it('addDownloadedSetId и removeDownloadedSetId корректно модифицируют кэш', async () => {
+    invalidateCachedDownloads();
+    await fs.writeFile(path.join(tempDownloadsDir, '777.osz'), Buffer.alloc(100));
+    addDownloadedSetId(777);
+    const sets = getCachedDownloadedSets(tempDownloadsDir);
+    assert.equal(sets.has(777), true);
+
+    removeDownloadedSetId(777);
+    assert.equal(sets.has(777), false);
+  });
+
+  it('classifyCollectionSets и estimateRequiredDiskSpace не выполняют пофайловый stat на каждый ID из 5000 карт', async () => {
+    await fs.writeFile(path.join(tempDownloadsDir, '101.osz'), Buffer.alloc(1024));
+    invalidateCachedDownloads();
+
+    const ids = Array.from({ length: 5000 }, (_, i) => i + 1);
+
+    let statSyncCalls = 0;
+    const origStatSync = nodeFs.statSync;
+    nodeFs.statSync = function (...args) {
+      statSyncCalls++;
+      return origStatSync.apply(this, args);
+    };
+
+    try {
+      const res = classifyCollectionSets(ids);
+      assert.deepEqual(res.downloadedSetIds, [101]);
+      // Вместо 5000 вызовов statSync для каждого ID, statSync вызывается только для реальных файлов в папке (1 раз для 101.osz)
+      assert.ok(statSyncCalls <= 5, `Ожидалось не более 5 вызовов statSync, получено: ${statSyncCalls}`);
+    } finally {
+      nodeFs.statSync = origStatSync;
+    }
+
+    let asyncStatCalls = 0;
+    const origAsyncStat = nodeFs.promises.stat;
+    nodeFs.promises.stat = async function (...args) {
+      asyncStatCalls++;
+      return origAsyncStat.apply(this, args);
+    };
+
+    try {
+      const est = await estimateRequiredDiskSpace(ids, false, { checkOsu: false });
+      // 4999 карт по 10 МБ (101 уже скачан)
+      assert.equal(est, 4999 * 10 * 1024 * 1024);
+      assert.ok(asyncStatCalls <= 5, `Ожидалось не более 5 вызовов async stat, получено: ${asyncStatCalls}`);
+    } finally {
+      nodeFs.promises.stat = origAsyncStat;
+    }
+  });
+
+  it('runJob не выполняет повторный estimateRequiredDiskSpace при job._spaceChecked = true', async () => {
+    const mockJob = {
+      id: 'job_space_checked_test',
+      method: 'mirror',
+      setIds: [99901, 99902],
+      doneIds: new Set([99901, 99902]),
+      skipIds: new Set(),
+      errIds: new Set(),
+      _spaceChecked: true,
+      status: 'queued',
+      abortController: new AbortController(),
+    };
+
+    await runJob(mockJob, { kind: 'mirror' });
+    // _spaceChecked должен быть очищен после первого прохода
+    assert.equal(mockJob._spaceChecked, undefined);
   });
 });

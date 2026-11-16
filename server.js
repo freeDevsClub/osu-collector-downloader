@@ -220,6 +220,7 @@ async function resumePausedJobWithSettings(res, job, auth, method, noVideo, trig
     return json(res, 507, { error: safeErrorMessage(error) });
   }
   job.autoResumeCount = 0;
+  job._spaceChecked = true;
   resumeJob(job, auth, trigger);
   return json(res, 202, safeJobForClient(job));
 }
@@ -566,6 +567,7 @@ async function handleApi(req, res, url) {
     }
 
     log('info', 'download.job.created', { jobId: job.id, method, noVideo, mirrors: method === 'mirror' ? MIRRORS.map(mirror => mirror.id) : undefined, collectionId, collectionName: job.collectionName, total: setIds.length });
+    job._spaceChecked = true;
     launchJob(job, auth);
     void scheduleSaveState(true);
     return json(res, 202, safeJobForClient(job));
@@ -666,6 +668,7 @@ async function handleApi(req, res, url) {
     }
 
     job.autoResumeCount = 0;
+    job._spaceChecked = true;
     retryFailedJob(job, auth);
     return json(res, 202, safeJobForClient(job));
   }
