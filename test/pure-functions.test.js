@@ -22,6 +22,8 @@ const {
   isPrivateIPv6,
   redirectHostAllowed,
   HttpError,
+  pluralizeRu,
+  formatPluralRu,
 } = require('../server.js');
 
 describe('extractCollectionId', () => {
@@ -270,5 +272,63 @@ describe('redirectHostAllowed', () => {
     assert.equal(redirectHostAllowed(new URL('https://osu.ppy.sh:8443/d/123')), false); // Нестандартный порт
     assert.equal(redirectHostAllowed(new URL('https://fake-ppy.sh/d/123')), false);
     assert.equal(redirectHostAllowed(new URL('https://ppy.sh.evil.com/d/123')), false);
+  });
+});
+
+describe('pluralizeRu и formatPluralRu', () => {
+  it('корректно выбирает грамматическую форму числительного в русском языке', () => {
+    // 1 набор, 21 набор, 101 набор
+    assert.equal(pluralizeRu(1, 'набор', 'набора', 'наборов'), 'набор');
+    assert.equal(pluralizeRu(21, 'набор', 'набора', 'наборов'), 'набор');
+    assert.equal(pluralizeRu(101, 'набор', 'набора', 'наборов'), 'набор');
+
+    // 2-4 набора, 22-24 набора
+    assert.equal(pluralizeRu(2, 'набор', 'набора', 'наборов'), 'набора');
+    assert.equal(pluralizeRu(3, 'набор', 'набора', 'наборов'), 'набора');
+    assert.equal(pluralizeRu(4, 'набор', 'набора', 'наборов'), 'набора');
+    assert.equal(pluralizeRu(22, 'набор', 'набора', 'наборов'), 'набора');
+    assert.equal(pluralizeRu(34, 'набор', 'набора', 'наборов'), 'набора');
+
+    // 0, 5-20, 25-30 наборов
+    assert.equal(pluralizeRu(0, 'набор', 'набора', 'наборов'), 'наборов');
+    assert.equal(pluralizeRu(5, 'набор', 'набора', 'наборов'), 'наборов');
+    assert.equal(pluralizeRu(11, 'набор', 'набора', 'наборов'), 'наборов');
+    assert.equal(pluralizeRu(14, 'набор', 'набора', 'наборов'), 'наборов');
+    assert.equal(pluralizeRu(20, 'набор', 'набора', 'наборов'), 'наборов');
+    assert.equal(pluralizeRu(25, 'набор', 'набора', 'наборов'), 'наборов');
+  });
+
+  it('форматирует строку с числом и существительным (formatPluralRu)', () => {
+    assert.equal(formatPluralRu(1, 'набор', 'набора', 'наборов'), '1 набор');
+    assert.equal(formatPluralRu(2, 'набор', 'набора', 'наборов'), '2 набора');
+    assert.equal(formatPluralRu(5, 'набор', 'набора', 'наборов'), '5 наборов');
+    assert.equal(formatPluralRu(21, 'набор', 'набора', 'наборов'), '21 набор');
+
+    // Родительный падеж ("для 1 набора", "для 2 наборов", "для 5 наборов")
+    assert.equal(formatPluralRu(1, 'набора', 'наборов', 'наборов'), '1 набора');
+    assert.equal(formatPluralRu(2, 'набора', 'наборов', 'наборов'), '2 наборов');
+    assert.equal(formatPluralRu(5, 'набора', 'наборов', 'наборов'), '5 наборов');
+    assert.equal(formatPluralRu(21, 'набора', 'наборов', 'наборов'), '21 набора');
+  });
+});
+
+describe('HttpError', () => {
+  it('инициализирует status как каноническое свойство и синхронизирует httpStatus', () => {
+    const err = new HttpError(404, 'Не найдено');
+    assert.equal(err instanceof Error, true);
+    assert.equal(err instanceof HttpError, true);
+    assert.equal(err.name, 'HttpError');
+    assert.equal(err.message, 'Не найдено');
+    assert.equal(err.status, 404);
+    assert.equal(err.httpStatus, 404);
+
+    // Проверка сеттера httpStatus
+    err.httpStatus = 500;
+    assert.equal(err.status, 500);
+    assert.equal(err.httpStatus, 500);
+
+    // Проверка изменения status
+    err.status = 503;
+    assert.equal(err.httpStatus, 503);
   });
 });

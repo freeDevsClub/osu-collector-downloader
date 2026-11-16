@@ -29,6 +29,8 @@ const {
   HttpError,
   json,
   formatBytes,
+  pluralizeRu,
+  formatPluralRu,
 } = require('./lib/config.js');
 
 const {
@@ -214,7 +216,7 @@ async function resumePausedJobWithSettings(res, job, auth, method, noVideo, trig
       await ensureDiskSpace(requiredBytes);
     }
   } catch (error) {
-    if (error instanceof HttpError) return json(res, error.httpStatus, { error: error.message });
+    if (error instanceof HttpError) return json(res, error.status, { error: error.message });
     return json(res, 507, { error: safeErrorMessage(error) });
   }
   job.autoResumeCount = 0;
@@ -492,7 +494,7 @@ async function handleApi(req, res, url) {
     try {
       auth = await resolveJobAuth(req, { method });
     } catch (error) {
-      if (error instanceof HttpError) return json(res, error.httpStatus, { error: error.message });
+      if (error instanceof HttpError) return json(res, error.status, { error: error.message });
       return json(res, 401, { error: safeErrorMessage(error) });
     }
 
@@ -601,7 +603,7 @@ async function handleApi(req, res, url) {
     try {
       auth = await resolveJobAuth(req, job);
     } catch (error) {
-      if (error instanceof HttpError) return json(res, error.httpStatus, { error: error.message });
+      if (error instanceof HttpError) return json(res, error.status, { error: error.message });
       return json(res, 401, { error: safeErrorMessage(error) });
     }
 
@@ -638,7 +640,7 @@ async function handleApi(req, res, url) {
     try {
       auth = await resolveJobAuth(req, job);
     } catch (authError) {
-      if (authError instanceof HttpError) return json(res, authError.httpStatus, { error: authError.message });
+      if (authError instanceof HttpError) return json(res, authError.status, { error: authError.message });
       return json(res, 401, { error: safeErrorMessage(authError) });
     }
 
@@ -659,7 +661,7 @@ async function handleApi(req, res, url) {
         await ensureDiskSpace(requiredBytes);
       }
     } catch (spaceError) {
-      if (spaceError instanceof HttpError) return json(res, spaceError.httpStatus, { error: spaceError.message });
+      if (spaceError instanceof HttpError) return json(res, spaceError.status, { error: spaceError.message });
       return json(res, 507, { error: safeErrorMessage(spaceError) });
     }
 
@@ -855,10 +857,10 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     const err = /** @type {any} */ (error);
     log('error', 'http.request.failed', { method: req.method, path: url.pathname, error: safeErrorMessage(error) });
-    const status = (typeof err?.httpStatus === 'number')
-      ? err.httpStatus
-      : (typeof err?.status === 'number' && err.status >= 400 && err.status <= 599)
-        ? err.status
+    const status = (typeof err?.status === 'number' && err.status >= 400 && err.status <= 599)
+      ? err.status
+      : (typeof err?.httpStatus === 'number' && err.httpStatus >= 400 && err.httpStatus <= 599)
+        ? err.httpStatus
         : 500;
     json(res, status, { error: safeErrorMessage(error) || 'Внутренняя ошибка.' });
   }
@@ -1027,6 +1029,8 @@ module.exports = {
   clearRedactions,
   getActiveRedactionsCount,
   HttpError,
+  pluralizeRu,
+  formatPluralRu,
   loadStateFromDisk,
   saveStateToDisk,
   scheduleSaveState,

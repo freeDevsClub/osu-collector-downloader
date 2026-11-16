@@ -13,6 +13,39 @@ const byId = id => document.getElementById(id);
  */
 const toAny = err => /** @type {any} */ (err);
 
+const ruPluralRules = new Intl.PluralRules('ru-RU');
+
+/**
+ * @param {number} count
+ * @param {string} one
+ * @param {string} few
+ * @param {string} many
+ * @returns {string}
+ */
+function pluralizeRu(count, one, few, many) {
+  const rule = ruPluralRules.select(Math.abs(count));
+  switch (rule) {
+    case 'one':
+      return one;
+    case 'few':
+      return few;
+    case 'many':
+    default:
+      return many;
+  }
+}
+
+/**
+ * @param {number} count
+ * @param {string} one
+ * @param {string} few
+ * @param {string} many
+ * @returns {string}
+ */
+function formatPluralRu(count, one, few, many) {
+  return `${count} ${pluralizeRu(count, one, few, many)}`;
+}
+
 const collectionForm = byId('collection-form');
 const sessionForm = byId('session-form');
 const oauthForm = byId('oauth-form');
@@ -232,7 +265,7 @@ function renderOsuSettings(settings, updateInput = true) {
   }
   if (osuText) {
     if (osuSettings.valid && osuSettings.songsDir) {
-      osuText.textContent = `Подключено: найдено ${osuSettings.songsCount} наборов карт`;
+      osuText.textContent = `Подключено: найдено ${formatPluralRu(osuSettings.songsCount, 'набор', 'набора', 'наборов')} карт`;
     } else if (osuSettings.osuPath) {
       osuText.textContent = 'Папка Songs не найдена по указанному пути';
     } else {
@@ -284,8 +317,8 @@ async function saveOsuSettings(patchOrToast = true, maybeToast) {
     renderOsuSettings(data, isPathUpdate);
     if (isPathUpdate) {
       if (data.valid) {
-        setStatus(osuStatus, `Настройки сохранены. Найдено ${data.songsCount} наборов карт в osu! Songs.`, 'success');
-        if (showToast) notify(`osu! Songs подключена (${data.songsCount} наборов).`);
+        setStatus(osuStatus, `Настройки сохранены. Найдено ${formatPluralRu(data.songsCount, 'набор', 'набора', 'наборов')} карт в osu! Songs.`, 'success');
+        if (showToast) notify(`osu! Songs подключена (${formatPluralRu(data.songsCount, 'набор', 'набора', 'наборов')}).`);
       } else {
         setStatus(osuStatus, 'Путь сохранён (папка osu! отключена).', '');
         if (showToast) notify('Настройки osu! обновлены.');
@@ -321,8 +354,8 @@ async function rescanOsuSongs() {
     const data = await api('/api/osu/rescan', { method: 'POST' });
     osuSettings.songsCount = Number(data.count || 0);
     renderOsuSettings(osuSettings, false);
-    setStatus(osuStatus, `Сканирование завершено: найдено ${data.count} наборов карт.`, 'success');
-    notify(`Найдено ${data.count} наборов карт в osu! Songs.`);
+    setStatus(osuStatus, `Сканирование завершено: найдено ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} карт.`, 'success');
+    notify(`Найдено ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} карт в osu! Songs.`);
     await recheckCollectionOsu();
   } catch (err) {
     const message = toAny(err).message;
@@ -556,9 +589,9 @@ function renderCollection(data) {
   collection = data;
   byId('collection-name').textContent = data.name;
   byId('collection-uploader').textContent = data.uploader ? `Автор: ${data.uploader}` : '';
-  byId('collection-count').textContent = `${data.count} ${data.count === 1 ? 'набор' : 'наборов'}`;
+  byId('collection-count').textContent = formatPluralRu(data.count, 'набор', 'набора', 'наборов');
   byId('collection-meta').replaceChildren();
-  const metadata = [`${data.beatmapCount} карт`, `ID ${data.id}`];
+  const metadata = [formatPluralRu(data.beatmapCount, 'карта', 'карты', 'карт'), `ID ${data.id}`];
   for (const text of metadata) {
     const chip = document.createElement('span');
     chip.className = 'chip';
@@ -587,11 +620,11 @@ function renderCollection(data) {
 
   const installedCount = data.installedSetIds?.length || 0;
   if (installedCount === data.count && data.count > 0) {
-    setStatus(collectionStatus, `Все ${data.count} наборов карт из этой коллекции уже есть в osu! Songs.`, 'success');
+    setStatus(collectionStatus, `Все ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} карт из этой коллекции уже есть в osu! Songs.`, 'success');
   } else if (installedCount > 0) {
-    setStatus(collectionStatus, `Найдено ${data.count} наборов (${installedCount} уже в osu!, ${data.count - installedCount} новых).`, 'success');
+    setStatus(collectionStatus, `Найдено ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} (${installedCount} уже в osu!, ${data.count - installedCount} новых).`, 'success');
   } else {
-    setStatus(collectionStatus, `Найдено ${data.count} уникальных наборов карт.`, 'success');
+    setStatus(collectionStatus, `Найдено ${formatPluralRu(data.count, 'уникальный набор', 'уникальных набора', 'уникальных наборов')} карт.`, 'success');
   }
 
   if (!data.metadataComplete && !data.metadataDegraded) {
