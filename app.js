@@ -5,7 +5,7 @@
  * @param {string} id
  * @returns {any}
  */
-const byId = id => document.getElementById(id);
+const byId = id => (typeof document !== 'undefined' ? document.getElementById(id) : null);
 
 /**
  * @param {unknown} err
@@ -68,7 +68,7 @@ const transferTrack = byId('transfer-track');
 const sessionInput = byId('session-cookie');
 const checkboxNoVideo = /** @type {HTMLInputElement | null} */ (byId('checkbox-novideo'));
 /** @type {HTMLInputElement[]} */
-const methodInputs = /** @type {any} */ ([...document.querySelectorAll('input[name="download-method"]')]);
+const methodInputs = typeof document !== 'undefined' ? /** @type {any} */ ([...document.querySelectorAll('input[name="download-method"]')]) : [];
 const osuPathInput = /** @type {HTMLInputElement | null} */ (byId('osu-path-input'));
 const osuPathBrowse = byId('osu-path-browse');
 const osuPathSave = byId('osu-path-save');
@@ -78,13 +78,13 @@ const osuRescan = byId('osu-rescan');
 const osuStatus = byId('osu-status');
 const checkboxCheckExisting = /** @type {HTMLInputElement | null} */ (byId('checkbox-check-existing'));
 /** @type {HTMLInputElement[]} */
-const postActionInputs = /** @type {any} */ ([...document.querySelectorAll('input[name="post-download-action"]')]);
+const postActionInputs = typeof document !== 'undefined' ? /** @type {any} */ ([...document.querySelectorAll('input[name="post-download-action"]')]) : [];
 const JOB_STORAGE_KEY = 'osu-collector-downloader.jobId';
 const NOVIDEO_STORAGE_KEY = 'osu-collector-downloader.noVideo';
 const POLL_INTERVAL_MS = 1300;
 const POLL_MAX_FAILURES = 3;
 
-if (checkboxNoVideo) {
+if (checkboxNoVideo && typeof localStorage !== 'undefined') {
   try {
     const saved = localStorage.getItem(NOVIDEO_STORAGE_KEY);
     if (saved !== null) {
@@ -377,6 +377,8 @@ async function recheckCollectionOsu() {
     });
     collection.installedSetIds = data.installedSetIds || [];
     collection.downloadedSetIds = data.downloadedSetIds || [];
+    collection.installedSet = new Set(collection.installedSetIds.map(Number));
+    collection.downloadedSet = new Set(collection.downloadedSetIds.map(Number));
 
     let chipInst = byId('chip-installed');
     if (collection.installedSetIds.length > 0) {
@@ -411,8 +413,21 @@ async function recheckCollectionOsu() {
 
 function updateMapBadge(badge, id) {
   if (!badge || !id) return;
-  const isInstalled = collection?.installedSetIds?.includes(id);
-  const isDownloaded = collection?.downloadedSetIds?.includes(id);
+  const numId = Number(id);
+  if (collection) {
+    if (!collection.installedSet && Array.isArray(collection.installedSetIds)) {
+      collection.installedSet = new Set(collection.installedSetIds.map(Number));
+    }
+    if (!collection.downloadedSet && Array.isArray(collection.downloadedSetIds)) {
+      collection.downloadedSet = new Set(collection.downloadedSetIds.map(Number));
+    }
+  }
+  const isInstalled = collection?.installedSet
+    ? collection.installedSet.has(numId)
+    : collection?.installedSetIds?.includes(numId);
+  const isDownloaded = collection?.downloadedSet
+    ? collection.downloadedSet.has(numId)
+    : collection?.downloadedSetIds?.includes(numId);
   if (isInstalled) {
     badge.className = 'badge-tag tag-installed';
     badge.textContent = 'В игре';
@@ -592,8 +607,14 @@ async function pollMetadata() {
     if (collection && String(collection.id) === pollingCollectionId) {
       collection.metadataComplete = data.metadataComplete;
       collection.metadataProgress = data.metadataProgress;
-      if (Array.isArray(data.installedSetIds)) collection.installedSetIds = data.installedSetIds;
-      if (Array.isArray(data.downloadedSetIds)) collection.downloadedSetIds = data.downloadedSetIds;
+      if (Array.isArray(data.installedSetIds)) {
+        collection.installedSetIds = data.installedSetIds;
+        collection.installedSet = new Set(data.installedSetIds.map(Number));
+      }
+      if (Array.isArray(data.downloadedSetIds)) {
+        collection.downloadedSetIds = data.downloadedSetIds;
+        collection.downloadedSet = new Set(data.downloadedSetIds.map(Number));
+      }
 
       if (Array.isArray(data.maps) && data.maps.length > 0) {
         const offset = Number(data.offset) || 0;
@@ -625,6 +646,8 @@ async function pollMetadata() {
 
 function renderCollection(data) {
   collection = data;
+  collection.installedSet = new Set((data.installedSetIds || []).map(Number));
+  collection.downloadedSet = new Set((data.downloadedSetIds || []).map(Number));
   byId('collection-name').textContent = data.name;
   byId('collection-uploader').textContent = data.uploader ? `Автор: ${data.uploader}` : '';
   byId('collection-count').textContent = formatPluralRu(data.count, 'набор', 'набора', 'наборов');
@@ -673,7 +696,7 @@ function renderCollection(data) {
   updateMetadataBadge(data);
 }
 
-collectionForm.addEventListener('submit', async event => {
+collectionForm?.addEventListener('submit', async event => {
   event.preventDefault();
   const value = collectionUrl.value.trim();
   if (!value) return;
@@ -779,24 +802,24 @@ postActionInputs.forEach(input => {
   });
 });
 
-sessionForm.addEventListener('submit', async event => {
+sessionForm?.addEventListener('submit', async event => {
   event.preventDefault();
-  const session = sessionInput.value.trim();
+  const session = sessionInput ? sessionInput.value.trim() : '';
   if (!session) return;
   const button = byId('session-save');
-  button.disabled = true;
+  if (button) button.disabled = true;
   try {
     await api('/api/session', { method: 'POST', body: JSON.stringify({ session }) });
-    sessionInput.value = '';
+    if (sessionInput) sessionInput.value = '';
     renderSessionState(true);
     notify('Сессия сохранена только в памяти приложения.');
   } catch (rawError) {
     notify(toAny(rawError).message);
   } finally {
-    button.disabled = false;
+    if (button) button.disabled = false;
   }
 });
-byId('session-clear').addEventListener('click', async () => {
+byId('session-clear')?.addEventListener('click', async () => {
   try {
     await api('/api/session', { method: 'DELETE' });
     renderSessionState(false);
@@ -809,10 +832,10 @@ byId('session-clear').addEventListener('click', async () => {
 // Загружаем ту коллекцию, что открыта в предпросмотре, а не то, что осталось в поле ввода:
 // после показа списка пользователь мог отредактировать текст в input.
 function collectionPayload() {
-  return collection?.id ? { url: String(collection.id) } : { url: collectionUrl.value.trim() };
+  return collection?.id ? { url: String(collection.id) } : { url: collectionUrl ? collectionUrl.value.trim() : '' };
 }
 
-downloadButton.addEventListener('click', async () => {
+downloadButton?.addEventListener('click', async () => {
   if (!collection) return;
   const method = selectedMethod();
   if (!methodReady(method)) {
@@ -1153,7 +1176,7 @@ function finishJob(job, errorMessage = '') {
   }
 }
 
-resumeButton.addEventListener('click', async () => {
+resumeButton?.addEventListener('click', async () => {
   if (!pausedJob) return;
   const method = selectedMethod();
   if (!methodReady(method)) {
@@ -1210,7 +1233,7 @@ if (retryFailedButton) {
     }
   });
 }
-cancelButton.addEventListener('click', async () => {
+cancelButton?.addEventListener('click', async () => {
   const targetId = activeJob || pausedJob;
   if (!targetId) return;
   cancelButton.disabled = true;
@@ -1231,44 +1254,49 @@ async function loadOauthStatus() {
   return status;
 }
 
-oauthForm.addEventListener('submit', async event => {
+oauthForm?.addEventListener('submit', async event => {
   event.preventDefault();
-  const clientId = byId('oauth-client-id').value.trim();
-  const clientSecret = byId('oauth-client-secret').value.trim();
+  const clientId = byId('oauth-client-id')?.value.trim();
+  const clientSecret = byId('oauth-client-secret')?.value.trim();
   if (!clientId || (!clientSecret && !oauthState.configured)) {
     setStatus(byId('oauth-status'), 'Укажите Client ID и Client Secret.', 'error');
     return;
   }
   const button = byId('oauth-save');
-  button.disabled = true;
-  button.textContent = 'Сохраняю…';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Сохраняю…';
+  }
   try {
     const status = await api('/api/oauth/config', { method: 'POST', body: JSON.stringify({ clientId, clientSecret }) });
-    byId('oauth-client-secret').value = '';
+    const secretInput = byId('oauth-client-secret');
+    if (secretInput) secretInput.value = '';
     renderOauthStatus(status);
     setStatus(byId('oauth-status'), 'Приложение сохранено. Теперь войдите через osu!.', 'success');
     notify('OAuth-приложение сохранено только в памяти приложения.');
   } catch (rawError) {
     setStatus(byId('oauth-status'), toAny(rawError).message, 'error');
   } finally {
-    button.disabled = false;
-    button.textContent = 'Сохранить';
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Сохранить';
+    }
   }
 });
 
-byId('oauth-authorize').addEventListener('click', async () => {
+byId('oauth-authorize')?.addEventListener('click', async () => {
   const button = byId('oauth-authorize');
-  button.disabled = true;
+  if (button) button.disabled = true;
   try {
     const { authorizeUrl } = await api('/api/oauth/start', { method: 'POST', body: '{}' });
-    window.location.assign(authorizeUrl);
+    if (typeof window !== 'undefined') window.location.assign(authorizeUrl);
   } catch (rawError) {
     setStatus(byId('oauth-status'), toAny(rawError).message, 'error');
-    button.disabled = false;
+    if (button) button.disabled = false;
   }
 });
 
-byId('oauth-disconnect').addEventListener('click', async () => {
+byId('oauth-disconnect')?.addEventListener('click', async () => {
   try {
     const status = await api('/api/oauth/disconnect', { method: 'DELETE' });
     renderOauthStatus(status);
@@ -1338,16 +1366,18 @@ async function restoreJob() {
 }
 
 // Отсчёт пауз зеркал перерисовывается каждую секунду только при наличии активных кулдаунов.
-setInterval(() => {
-  if (hasActiveCooldowns()) renderMirrors();
-}, 1000);
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    if (hasActiveCooldowns()) renderMirrors();
+  }, 1000);
 
-// Фоновый опрос зеркал запускается только при открытой вкладке, когда нет активной задачи (во время которой зеркала приходят с каждым тиком задачи), но есть остывающие зеркала.
-setInterval(() => {
-  if (document.visibilityState === 'visible' && !activeJob && hasActiveCooldowns()) {
-    void loadMirrors();
-  }
-}, 4000);
+  // Фоновый опрос зеркал запускается только при открытой вкладке, когда нет активной задачи (во время которой зеркала приходят с каждым тиком задачи), но есть остывающие зеркала.
+  setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible' && !activeJob && hasActiveCooldowns()) {
+      void loadMirrors();
+    }
+  }, 4000);
+}
 
 async function initialize() {
   const params = new URLSearchParams(window.location.search);
@@ -1396,4 +1426,25 @@ async function initialize() {
   await restoreJob();
 }
 
-initialize();
+function setCollection(c) {
+  collection = c;
+}
+
+function getCollection() {
+  return collection;
+}
+
+if (typeof window !== 'undefined') {
+  initialize();
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    updateMapBadge,
+    refreshMapListBadges,
+    updateMapListLabels,
+    renderCollection,
+    setCollection,
+    getCollection,
+  };
+}
