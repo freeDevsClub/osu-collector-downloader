@@ -640,4 +640,118 @@ describe('Сохранение состояния очереди на диск (
     assert.ok(typeof s3.createdAt === 'number' && s3.createdAt > 0);
     assert.equal(jobWithoutCreatedAt.createdAt, s3.createdAt, 'serializeJob должен зафиксировать createdAt на объекте задачи');
   });
+
+  it('saveStateToDisk сохраняет компактный JSON без отступов и лишних переводов строк', async () => {
+    const job = {
+      id: 'job_compact_json_test',
+      method: 'mirror',
+      setIds: [1001, 1002],
+      doneIds: new Set([1001]),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      extraFailures: 0,
+      mapsById: new Map([
+        [1001, { id: 1001, label: 'Artist 1 — Title 1', title: 'Title 1', artist: 'Artist 1', creator: 'Creator 1' }],
+        [1002, { id: 1002, label: 'Artist 2 — Title 2', title: 'Title 2', artist: 'Artist 2', creator: 'Creator 2' }],
+      ]),
+      status: 'running',
+      message: 'Загрузка...',
+      createdAt: Date.now(),
+    };
+
+    jobs.set(job.id, job);
+    setActiveJob(job);
+
+    await saveStateToDisk();
+
+    const stateFile = getStateFilePath();
+    const raw = await fs.readFile(stateFile, 'utf8');
+
+    // Файл должен быть валидным JSON
+    const parsed = JSON.parse(raw);
+    assert.equal(parsed.activeJobId, 'job_compact_json_test');
+
+    // Проверяем, что нет отступов (null, 2)
+    assert.ok(!raw.includes('{\n  "version"'), 'JSON не должен содержать форматирование с отступами null, 2');
+    assert.ok(!raw.includes('\n    "id":'), 'JSON не должен содержать многострочные отступы внутри элементов массива');
+  });
+
+  it('serializeJob повторно использует закешированные метаданные карт (_cachedSerializedMaps) и статическую часть', () => {
+    const mapCount = 1000;
+    const mapsById = new Map();
+    for (let i = 1; i <= mapCount; i++) {
+      mapsById.set(i, {
+        id: i,
+        label: `Artist ${i} — Title ${i}`,
+        title: `Title ${i}`,
+        artist: `Artist ${i}`,
+        creator: `Mapper ${i}`,
+      });
+    }
+
+    const job = {
+      id: 'job_cache_reuse_test',
+      method: 'mirror',
+      setIds: Array.from(mapsById.keys()),
+      doneIds: new Set(),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      mapsById,
+      status: 'running',
+      message: 'Загрузка...',
+      createdAt: 1710000000000,
+    };
+
+    const first = serializeJob(job);
+    assert.ok(Array.isArray(first.maps));
+    assert.equal(first.maps.length, mapCount);
+    assert.ok(job._cachedSerializedMaps, 'должен быть сформирован _cachedSerializedMaps');
+
+    // При изменении только динамического прогресса
+    job.doneIds.add(1);
+    const second = serializeJob(job);
+
+    // Массив карт и статические метаданные должны переиспользоваться по ссылке
+    assert.equal(second.maps, first.maps, 'Массив maps должен переиспользоваться без переаллокации');
+    assert.deepEqual(second.doneIds, [1]);
+  });
+
+  it('serializeJob корректно инвалидирует и обновляет кеш метаданных при фоновом обогащении карт', () => {
+    const mapsById = new Map([
+      [10, { id: 10, label: 'Набор 10', title: null, artist: null, creator: null }],
+    ]);
+
+    const job = {
+      id: 'job_cache_invalidation_test',
+      method: 'mirror',
+      setIds: [10],
+      doneIds: new Set(),
+      skipIds: new Set(),
+      errIds: new Set(),
+      errorsById: new Map(),
+      mapsById,
+      status: 'running',
+      message: 'Ожидание метаданных...',
+      createdAt: 1710000000000,
+    };
+
+    const first = serializeJob(job);
+    assert.equal(first.maps[0].title, null);
+
+    // Имитируем фоновое обогащение названия карты
+    mapsById.set(10, {
+      id: 10,
+      label: 'Artist X — Song Y',
+      title: 'Song Y',
+      artist: 'Artist X',
+      creator: 'Mapper Z',
+    });
+
+    const second = serializeJob(job);
+    assert.notEqual(second.maps, first.maps, 'Кеш должен обновиться при поступлении названий карт');
+    assert.equal(second.maps[0].title, 'Song Y');
+    assert.equal(second.maps[0].artist, 'Artist X');
+  });
 });
