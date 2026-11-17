@@ -42,8 +42,12 @@ describe('Мгновенный старт и ленивая подгрузка �
   it('fetchCollection немедленно возвращает структуру коллекции без ожидания пагинации beatmapsV2', async () => {
     /** @type {(value?: any) => void} */
     let resolveBeatmapsV2 = () => {};
+    let beatmapsV2Resolved = false;
     const beatmapsV2Promise = new Promise(resolve => {
-      resolveBeatmapsV2 = resolve;
+      resolveBeatmapsV2 = () => {
+        beatmapsV2Resolved = true;
+        resolve();
+      };
     });
 
     globalThis.fetch = async (input, init) => {
@@ -86,7 +90,8 @@ describe('Мгновенный старт и ленивая подгрузка �
     const snapshot = await fetchCollection('99001');
     const elapsed = Date.now() - start;
 
-    assert.ok(elapsed < 200, `fetchCollection должен возвращаться мгновенно, заняло ${elapsed}мс`);
+    assert.equal(beatmapsV2Resolved, false, 'fetchCollection не должен дожидаться пагинации beatmapsV2');
+    assert.ok(elapsed < 2000, `fetchCollection должен возвращаться быстро без ожидания пагинации, заняло ${elapsed}мс`);
     assert.equal(snapshot.id, 99001);
     assert.equal(snapshot.name, 'Speed Streams');
     assert.equal(snapshot.uploader, 'ProPlayer');
