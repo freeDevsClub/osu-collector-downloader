@@ -123,6 +123,7 @@ const {
   pruneSessionsAndOauth,
 } = require('./lib/oauth.js');
 
+const osu = require('./lib/osu.js');
 const {
   getSettings: getOsuSettings,
   saveSettings: saveOsuSettings,
@@ -130,7 +131,7 @@ const {
   getCachedOsuSongs,
   getCachedOsuSongsAsync,
   selectFolderDialog,
-} = require('./lib/osu.js');
+} = osu;
 
 /**
  * Читает тело HTTP-запроса с лимитом размера и парсит его как JSON.
@@ -447,7 +448,7 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const collectionId = extractCollectionId(body?.url);
     const data = await fetchCollection(collectionId);
-    const { installedSetIds, downloadedSetIds } = classifyCollectionSets(data.setIds);
+    const { installedSetIds, downloadedSetIds } = osu.classifyCollectionSets(data.setIds);
     return json(res, 200, {
       id: data.id,
       name: data.name,
@@ -469,14 +470,64 @@ async function handleApi(req, res, url) {
     if (req.method !== 'GET') return handleMethodNotAllowed(req, res, ['GET']);
     const collectionId = collectionMatch[1];
     const data = await fetchCollection(collectionId);
-    const { installedSetIds, downloadedSetIds } = classifyCollectionSets(data.setIds);
+
+    const isPoll = url.searchParams.get('poll') === '1' || url.searchParams.get('poll') === 'true';
+    const hasSince = url.searchParams.has('since');
+    const isStatusOnly = url.searchParams.get('statusOnly') === '1' || url.searchParams.get('statusOnly') === 'true';
+    const skipClassify = isPoll || hasSince || isStatusOnly || url.searchParams.get('classify') === '0';
+
+    if (isStatusOnly) {
+      return json(res, 200, {
+        id: data.id,
+        name: data.name,
+        count: data.count,
+        beatmapCount: data.beatmapCount,
+        metadataComplete: Boolean(data.metadataComplete),
+        metadataDegraded: Boolean(data.metadataDegraded),
+        metadataProgress: Number(data.metadataProgress || 0),
+      });
+    }
+
+    let maps = data.maps;
+    let offset = 0;
+
+    if (hasSince) {
+      const sinceParam = Number(url.searchParams.get('since'));
+      const since = Number.isSafeInteger(sinceParam) && sinceParam >= 0 ? sinceParam : 0;
+      const progress = Number(data.metadataProgress || 0);
+      offset = since;
+      if (since >= progress) {
+        maps = [];
+      } else {
+        maps = data.maps.slice(since, progress);
+      }
+    }
+
+    if (skipClassify) {
+      return json(res, 200, {
+        id: data.id,
+        name: data.name,
+        uploader: data.uploader,
+        count: data.count,
+        beatmapCount: data.beatmapCount,
+        maps,
+        offset,
+        setIds: hasSince ? [] : data.setIds,
+        metadataComplete: Boolean(data.metadataComplete),
+        metadataDegraded: Boolean(data.metadataDegraded),
+        metadataProgress: Number(data.metadataProgress || 0),
+      });
+    }
+
+    const { installedSetIds, downloadedSetIds } = osu.classifyCollectionSets(data.setIds);
     return json(res, 200, {
       id: data.id,
       name: data.name,
       uploader: data.uploader,
       count: data.count,
       beatmapCount: data.beatmapCount,
-      maps: data.maps,
+      maps,
+      offset,
       setIds: data.setIds,
       metadataComplete: Boolean(data.metadataComplete),
       metadataDegraded: Boolean(data.metadataDegraded),

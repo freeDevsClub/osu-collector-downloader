@@ -492,11 +492,11 @@ function renderMapList(maps = []) {
   renderChunk();
 }
 
-function updateMapListLabels(maps = []) {
+function updateMapListLabels(maps = [], offset = 0) {
   for (let i = 0; i < maps.length; i++) {
     const map = maps[i];
     if (!map) continue;
-    const elements = mapListByIndex[i];
+    const elements = mapListByIndex[offset + i];
     if (!elements) continue;
 
     // Если у этой строки изменился setId (при перестановке незаполненных элементов)
@@ -551,13 +551,14 @@ function updateMetadataBadge(data) {
     chip.id = 'metadata-chip';
     byId('collection-meta').append(chip);
   }
+  const totalCount = data.count || collection?.count || 0;
   if (data.metadataDegraded) {
     chip.className = 'chip chip-warn';
-    chip.textContent = `Часть названий недоступна (${data.metadataProgress || 0}/${data.count || 0})`;
+    chip.textContent = `Часть названий недоступна (${data.metadataProgress || 0}/${totalCount})`;
     return;
   }
   chip.className = 'chip loading';
-  chip.textContent = `Загрузка названий (${data.metadataProgress || 0}/${data.count || 0})…`;
+  chip.textContent = `Загрузка названий (${data.metadataProgress || 0}/${totalCount})…`;
 }
 
 function stopMetadataPolling() {
@@ -584,19 +585,29 @@ async function pollMetadata() {
   if (!pollingCollectionId || metadataPollInFlight) return;
   metadataPollInFlight = true;
   try {
-    const data = await api(`/api/collections/${pollingCollectionId}`);
+    const currentProgress = Number(collection?.metadataProgress || 0);
+    const data = await api(`/api/collections/${pollingCollectionId}?poll=1&since=${currentProgress}`);
     if (!pollingCollectionId || String(data.id) !== pollingCollectionId) return;
 
     if (collection && String(collection.id) === pollingCollectionId) {
-      collection.maps = data.maps;
       collection.metadataComplete = data.metadataComplete;
       collection.metadataProgress = data.metadataProgress;
       if (Array.isArray(data.installedSetIds)) collection.installedSetIds = data.installedSetIds;
       if (Array.isArray(data.downloadedSetIds)) collection.downloadedSetIds = data.downloadedSetIds;
+
+      if (Array.isArray(data.maps) && data.maps.length > 0) {
+        const offset = Number(data.offset) || 0;
+        if (!Array.isArray(collection.maps)) collection.maps = [];
+        for (let i = 0; i < data.maps.length; i++) {
+          collection.maps[offset + i] = data.maps[i];
+        }
+      }
     }
 
     updateMetadataBadge(data);
-    updateMapListLabels(data.maps);
+    if (Array.isArray(data.maps) && data.maps.length > 0) {
+      updateMapListLabels(data.maps, Number(data.offset) || 0);
+    }
 
     if (data.metadataComplete || data.metadataDegraded) {
       stopMetadataPolling();

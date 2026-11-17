@@ -606,4 +606,131 @@ describe('Мгновенный старт и ленивая подгрузка �
     assert.equal(snapshot.maps[1].id, 999);
     assert.equal(snapshot.maps[1].label, 'Набор 999');
   });
+
+  it('GET /api/collections/:id?poll=1&since=N отдаёт только дельту обогащённых карт и исключает классификацию', async () => {
+    const osu = require('../lib/osu.js');
+    let classifyCalls = 0;
+    const originalClassify = osu.classifyCollectionSets;
+    osu.classifyCollectionSets = (setIds) => {
+      classifyCalls++;
+      return originalClassify(setIds);
+    };
+
+    /** @type {(value?: any) => void} */
+    let resolvePaging = () => {};
+    const pagingGate = new Promise(resolve => {
+      resolvePaging = resolve;
+    });
+
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes('/api/collections/99011/beatmapsV2')) {
+        await pagingGate;
+        return new Response(
+          JSON.stringify({
+            beatmaps: [
+              { beatmapset_id: 1101, beatmapset: { title: 'Song 1', artist: 'Artist 1' } },
+              { beatmapset_id: 1102, beatmapset: { title: 'Song 2', artist: 'Artist 2' } },
+            ],
+            hasMore: false,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/collections/99011')) {
+        return new Response(
+          JSON.stringify({
+            id: 99011,
+            name: 'Polling Test Collection',
+            beatmapCount: 3,
+            beatmapsets: [{ id: 1101 }, { id: 1102 }, { id: 1103 }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return originalFetch(input, init);
+    };
+
+    try {
+      const localHeaders = {
+        Host: `127.0.0.1:${PORT}`,
+        'Content-Type': 'application/json',
+      };
+
+      // 1. Первоначальный запрос коллекции (POST /api/collections)
+      const postRes = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections`, {
+        method: 'POST',
+        headers: localHeaders,
+        body: JSON.stringify({ url: 'https://osucollector.com/collections/99011' }),
+      });
+      assert.equal(postRes.status, 200);
+      const postData = await postRes.json();
+      assert.equal(postData.id, 99011);
+      assert.equal(postData.metadataProgress, 0);
+      assert.equal(classifyCalls, 1, 'Первоначальный POST должен выполнить классификацию');
+
+      // 2. Легковесный запрос статуса ?statusOnly=1 во время ожидания пагинации
+      const statusRes = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections/99011?statusOnly=1`, {
+        headers: localHeaders,
+      });
+      assert.equal(statusRes.status, 200);
+      const statusData = await statusRes.json();
+      assert.equal(statusData.id, 99011);
+      assert.equal(statusData.metadataComplete, false);
+      assert.equal(statusData.metadataProgress, 0);
+      assert.equal(statusData.maps, undefined, 'statusOnly не должен отдавать maps');
+      assert.equal(statusData.installedSetIds, undefined, 'statusOnly не должен отдавать installedSetIds');
+      assert.equal(classifyCalls, 1, 'statusOnly=1 не должен вызывать classifyCollectionSets');
+
+      // 3. Поллинг ?poll=1&since=0 до появления новых названий
+      const pollResEmpty = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections/99011?poll=1&since=0`, {
+        headers: localHeaders,
+      });
+      assert.equal(pollResEmpty.status, 200);
+      const pollDataEmpty = await pollResEmpty.json();
+      assert.deepEqual(pollDataEmpty.maps, [], 'since=0 при progress=0 должен вернуть пустой массив maps');
+      assert.equal(classifyCalls, 1, 'poll=1 не должен вызывать classifyCollectionSets');
+
+      // 4. Разрешаем пагинацию V2
+      resolvePaging();
+      const cachedEntry = collectionCache.get('99011');
+      if (cachedEntry?.data?.metadataPromise) {
+        await cachedEntry.data.metadataPromise;
+      }
+
+      // 5. Поллинг ?poll=1&since=0 после обогащения 2 карт: сервер должен отдать только 2 новые карты
+      const pollResDelta = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections/99011?poll=1&since=0`, {
+        headers: localHeaders,
+      });
+      assert.equal(pollResDelta.status, 200);
+      const pollDataDelta = await pollResDelta.json();
+      assert.equal(pollDataDelta.metadataProgress, 2);
+      assert.equal(pollDataDelta.offset, 0);
+      assert.equal(pollDataDelta.maps.length, 2, 'Сервер должен отдать дельту из 2 карт');
+      assert.equal(pollDataDelta.maps[0].label, 'Artist 1 — Song 1');
+      assert.equal(pollDataDelta.maps[1].label, 'Artist 2 — Song 2');
+      assert.equal(classifyCalls, 1, 'poll=1 не должен вызывать classifyCollectionSets');
+
+      // 6. Повторный поллинг с актуальным since=2: новых карт нет, maps пустой
+      const pollResUpToDate = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections/99011?poll=1&since=2`, {
+        headers: localHeaders,
+      });
+      assert.equal(pollResUpToDate.status, 200);
+      const pollDataUpToDate = await pollResUpToDate.json();
+      assert.deepEqual(pollDataUpToDate.maps, [], 'при since=2 отдаётся пустой массив maps');
+      assert.equal(classifyCalls, 1, 'poll=1 не должен вызывать classifyCollectionSets');
+
+      // 7. Обычный GET без параметров по-прежнему выполняет полную классификацию (обратная совместимость)
+      const fullRes = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections/99011`, {
+        headers: localHeaders,
+      });
+      assert.equal(fullRes.status, 200);
+      const fullData = await fullRes.json();
+      assert.equal(fullData.maps.length, 3);
+      assert.ok(Array.isArray(fullData.installedSetIds));
+      assert.equal(classifyCalls, 2, 'Обычный GET должен выполнить classifyCollectionSets');
+    } finally {
+      osu.classifyCollectionSets = originalClassify;
+    }
+  });
 });
