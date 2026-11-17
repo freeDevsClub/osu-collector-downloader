@@ -13,6 +13,7 @@ const {
   emitJobUpdate,
   getActiveJob,
   setActiveJob,
+  safeJobForClient,
 } = require('../lib/jobs.js');
 const {
   server,
@@ -357,5 +358,103 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it('safeJobForClient исключает массивы errors и mirrors при options.byteTick: true', () => {
+    const job = {
+      id: 'c000000000000005',
+      method: 'mirror',
+      setIds: [1001, 1002],
+      doneIds: new Set([1001]),
+      skipIds: new Set(),
+      errIds: new Set([1002]),
+      errorsById: new Map([
+        [1002, { id: 1002, name: 'Beatmap 1002', error: 'Mirror 500 error' }],
+      ]),
+      status: 'running',
+    };
+
+    const full = safeJobForClient(job);
+    assert.ok(Array.isArray(full.errors), 'Полный снимок должен содержать errors');
+    assert.equal(full.errors.length, 1);
+    assert.ok(Array.isArray(full.mirrors), 'Полный снимок должен содержать mirrors');
+    assert.ok(full.mirrors.length > 0);
+
+    const byteTickSnapshot = safeJobForClient(job, { byteTick: true });
+    assert.equal(byteTickSnapshot.errors, undefined, 'Снимок при byteTick: true не должен содержать errors');
+    assert.equal(byteTickSnapshot.mirrors, undefined, 'Снимок при byteTick: true не должен содержать mirrors');
+    assert.equal(byteTickSnapshot.id, job.id);
+    assert.equal(byteTickSnapshot.downloaded, 1);
+  });
+
+  it('SSE-стрим передаёт легковесный снимок без errors и mirrors при промежуточном тике байтов', async () => {
+    const job = {
+      id: 'c000000000000006',
+      method: 'mirror',
+      setIds: [2001, 2002],
+      doneIds: new Set(),
+      skipIds: new Set(),
+      errIds: new Set([2001]),
+      errorsById: new Map([
+        [2001, { id: 2001, name: 'Beatmap 2001', error: 'Fail' }],
+      ]),
+      status: 'running',
+      currentSetId: 2002,
+      currentBytes: 1024,
+      currentTotalBytes: 4096,
+      currentPercent: 25,
+      _lastEmit: 0,
+      _emitTimer: null,
+    };
+    jobs.set(job.id, job);
+
+    /** @type {any[]} */
+    const sseUpdates = [];
+    const res = await new Promise(resolve => {
+      http.get(`http://127.0.0.1:${appPort}/api/downloads/${job.id}/events`, {
+        headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
+      }, resolve);
+    });
+
+    let buf = '';
+    const updateReceived = new Promise(resolve => {
+      res.on('data', chunk => {
+        buf += chunk.toString('utf-8');
+        const blocks = buf.split('\n\n');
+        buf = blocks.pop() || '';
+        for (const block of blocks) {
+          const match = block.match(/^data:\s*(.+)$/m);
+          if (match) {
+            try {
+              const data = JSON.parse(match[1]);
+              sseUpdates.push(data);
+              if (sseUpdates.length >= 2) {
+                resolve(null);
+              }
+            } catch {}
+          }
+        }
+      });
+    });
+
+    job.currentBytes = 2048;
+    job.currentPercent = 50;
+    emitJobUpdate(job, false);
+
+    await updateReceived;
+    res.socket?.destroy();
+    res.destroy();
+
+    assert.ok(sseUpdates.length >= 2);
+    // Первый снимок — initial snapshot (содержит errors и mirrors)
+    assert.ok(Array.isArray(sseUpdates[0].errors));
+    assert.ok(Array.isArray(sseUpdates[0].mirrors));
+
+    // Второй снимок — byteTick update (не содержит errors и mirrors)
+    const byteTickUpdate = sseUpdates[1];
+    assert.equal(byteTickUpdate.currentBytes, 2048);
+    assert.equal(byteTickUpdate.currentPercent, 50);
+    assert.equal(byteTickUpdate.errors, undefined, 'Byte tick не должен передавать массив errors');
+    assert.equal(byteTickUpdate.mirrors, undefined, 'Byte tick не должен передавать массив mirrors');
   });
 });

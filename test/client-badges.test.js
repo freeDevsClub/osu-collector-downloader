@@ -2,7 +2,7 @@
 
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { updateMapBadge, setCollection, getCollection } = require('../app.js');
+const { updateMapBadge, setCollection, getCollection, updateJob } = require('../app.js');
 
 describe('Оптимизация updateMapBadge: переход с O(N²) на O(N) через Set', () => {
   beforeEach(() => {
@@ -96,3 +96,103 @@ describe('Оптимизация updateMapBadge: переход с O(N²) на O
     assert.equal(badges[3].className, 'badge-tag tag-downloaded');// index 3 (% 3 === 0, % 2 !== 0)
   });
 });
+
+describe('Оптимизация updateJob и DOM-реконсиляция ошибок/зеркал', () => {
+  it('index.html содержит CSS-свойства content-visibility: auto и contain-intrinsic-size для .map-id', async () => {
+    const fs = require('node:fs/promises');
+    const path = require('node:path');
+    const html = await fs.readFile(path.join(__dirname, '..', 'index.html'), 'utf-8');
+
+    assert.match(html, /\.map-id\s*\{[^}]*content-visibility:\s*auto;/);
+    assert.match(html, /\.map-id\s*\{[^}]*contain-intrinsic-size:\s*0 42px;/);
+    assert.match(html, /\.map-id\.map-item\s*\{[^}]*content-visibility:\s*auto;/);
+    assert.match(html, /\.map-id\.map-item\s*\{[^}]*contain-intrinsic-size:\s*0 42px;/);
+  });
+
+  it('updateJob не пересоздаёт DOM-узлы в #failed-list, если сигнатура ошибок не изменилась или при byteTick', () => {
+    let replaceChildrenCalls = 0;
+    /** @type {any} */
+    const mockFailedList = {
+      children: [],
+      replaceChildren: () => {
+        replaceChildrenCalls++;
+        mockFailedList.children = [];
+      },
+      append: (item) => {
+        mockFailedList.children.push(item);
+      },
+    };
+    const mockFailedDetails = { hidden: true };
+    const mockFailedCount = { textContent: '' };
+
+    /** @type {Record<string, any>} */
+    const elements = {
+      'failed-details': mockFailedDetails,
+      'failed-list': mockFailedList,
+      'failed-summary-count': mockFailedCount,
+      'transfer-bytes': { textContent: '' },
+      'transfer-label': { textContent: '' },
+      'downloaded-count': { textContent: '' },
+      'skipped-count': { textContent: '' },
+      'failed-count': { textContent: '' },
+    };
+
+    const originalDocument = /** @type {any} */ (global).document;
+    /** @type {any} */ (global).document = {
+      getElementById: (id) => elements[id] || null,
+      createElement: (tag) => ({
+        tagName: tag,
+        className: '',
+        textContent: '',
+        append: (...args) => {},
+      }),
+    };
+
+    try {
+      const initialJob = {
+        id: 'job_rec_1',
+        total: 10,
+        completed: 1,
+        downloaded: 1,
+        skipped: 0,
+        failed: 1,
+        errors: [{ id: 101, name: 'Beatmap 101', error: '404 Not Found' }],
+      };
+
+      // Первый вызов: ошибки рендерятся в DOM (replaceChildren вызывается 1 раз)
+      updateJob(initialJob);
+      assert.equal(replaceChildrenCalls, 1, 'Первый рендер ошибок должен вызвать replaceChildren');
+      assert.equal(mockFailedDetails.hidden, false);
+      assert.equal(mockFailedCount.textContent, '1');
+
+      // Второй вызов: byte tick без поля errors (job.errors = undefined)
+      const byteTickJob = {
+        ...initialJob,
+        currentBytes: 1024,
+        errors: undefined,
+      };
+      updateJob(byteTickJob);
+      assert.equal(replaceChildrenCalls, 1, 'Byte tick без errors не должен трогать DOM список ошибок');
+
+      // Третий вызов: тот же массив ошибок с той же сигнатурой
+      updateJob(initialJob);
+      assert.equal(replaceChildrenCalls, 1, 'Повторный вызов с теми же ошибками не должен пересоздавать DOM');
+
+      // Четвертый вызов: добавилась новая ошибка
+      const updatedErrorsJob = {
+        ...initialJob,
+        failed: 2,
+        errors: [
+          { id: 101, name: 'Beatmap 101', error: '404 Not Found' },
+          { id: 102, name: 'Beatmap 102', error: 'Timeout' },
+        ],
+      };
+      updateJob(updatedErrorsJob);
+      assert.equal(replaceChildrenCalls, 2, 'При появлении новой ошибки replaceChildren должен вызваться снова');
+      assert.equal(mockFailedCount.textContent, '2');
+    } finally {
+      /** @type {any} */ (global).document = originalDocument;
+    }
+  });
+});
+

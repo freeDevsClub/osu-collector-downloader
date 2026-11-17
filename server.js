@@ -755,11 +755,13 @@ async function handleApi(req, res, url) {
 
     res.write(`retry: 1500\n\ndata: ${JSON.stringify(safeJobForClient(job))}\n\n`);
 
-    /** @param {any} updatedJob */
-    const onJobUpdate = (updatedJob) => {
+    /** @param {any} updatedJob
+     *  @param {any} [meta] */
+    const onJobUpdate = (updatedJob, meta) => {
       if (res.writableEnded || res.destroyed) return;
       try {
-        res.write(`data: ${JSON.stringify(safeJobForClient(updatedJob))}\n\n`);
+        const isByteTick = Boolean(meta?.byteTick);
+        res.write(`data: ${JSON.stringify(safeJobForClient(updatedJob, { byteTick: isByteTick }))}\n\n`);
       } catch {}
       if (['finished', 'finished_with_errors', 'cancelled'].includes(updatedJob.status)) {
         setTimeout(() => {

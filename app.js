@@ -106,6 +106,10 @@ let metadataPollTimer = null;
 let metadataPollInFlight = false;
 let pollingCollectionId = null;
 
+let lastRenderedErrorsSignature = null;
+let lastRenderedErrorsCount = -1;
+let lastMirrorsSignature = null;
+
 let collection = null;
 let activeJob = null;
 let pausedJob = null;
@@ -128,6 +132,7 @@ let osuSettings = {
 };
 
 function setStatus(element, text = '', tone = '') {
+  if (!element) return;
   element.textContent = text;
   element.className = `status${tone ? ` ${tone}` : ''}`;
 }
@@ -1008,7 +1013,11 @@ async function pollJob() {
 function updateJob(job) {
   if (job?.id) lastJobId = job.id;
   if (Array.isArray(job.mirrors)) {
-    updateMirrorsFromData(job.mirrors);
+    const mirrorsSig = job.mirrors.map(m => `${m.id}:${m.cooldownMs > 0 ? 1 : 0}`).join('|');
+    if (mirrorsSig !== lastMirrorsSignature) {
+      lastMirrorsSignature = mirrorsSig;
+      updateMirrorsFromData(job.mirrors);
+    }
   }
   if (checkboxNoVideo && typeof job.noVideo === 'boolean' && activeJob) {
     checkboxNoVideo.checked = job.noVideo;
@@ -1031,44 +1040,67 @@ function updateJob(job) {
   const total = job.total || 0;
   const percent = total ? Math.round(job.completed / total * 100) : 0;
   const currentPercent = Number.isFinite(job.currentPercent) ? job.currentPercent : null;
-  progressBar.style.width = `${percent}%`;
-  progressPercent.textContent = `${percent}%`;
-  progressTrack.setAttribute('aria-valuenow', String(percent));
-  progressLabel.textContent = job.currentSetName
-    ? `${job.currentSetName} · ${job.completed} из ${total}`
-    : job.currentSetId ? `Набор ${job.currentSetId} · ${job.completed} из ${total}` : `${job.completed} из ${total}`;
-  transferBar.style.width = `${currentPercent ?? 0}%`;
-  transferTrack.setAttribute('aria-valuenow', String(currentPercent ?? 0));
-  byId('transfer-bytes').textContent = job.currentTotalBytes
-    ? `${formatBytes(job.currentBytes)} / ${formatBytes(job.currentTotalBytes)}${currentPercent === null ? '' : ` · ${currentPercent}%`}`
-    : `${formatBytes(job.currentBytes)} загружено${currentPercent === null ? ' · размер неизвестен' : ` · ${currentPercent}%`}`;
-  byId('transfer-label').textContent = (job.currentSetName || (job.currentSetId ? `Набор ${job.currentSetId}` : 'Прогресс текущего набора')) + (job.currentMirror ? ` · ${job.currentMirror}` : '') + (job.noVideo ? ' · без видео' : '');
-  byId('downloaded-count').textContent = String(job.downloaded);
-  byId('skipped-count').textContent = String(job.skipped);
-  byId('failed-count').textContent = String(job.failed);
+  if (progressBar) progressBar.style.width = `${percent}%`;
+  if (progressPercent) progressPercent.textContent = `${percent}%`;
+  if (progressTrack) progressTrack.setAttribute('aria-valuenow', String(percent));
+  if (progressLabel) {
+    progressLabel.textContent = job.currentSetName
+      ? `${job.currentSetName} · ${job.completed} из ${total}`
+      : job.currentSetId ? `Набор ${job.currentSetId} · ${job.completed} из ${total}` : `${job.completed} из ${total}`;
+  }
+  if (transferBar) transferBar.style.width = `${currentPercent ?? 0}%`;
+  if (transferTrack) transferTrack.setAttribute('aria-valuenow', String(currentPercent ?? 0));
+  const transferBytesEl = byId('transfer-bytes');
+  if (transferBytesEl) {
+    transferBytesEl.textContent = job.currentTotalBytes
+      ? `${formatBytes(job.currentBytes)} / ${formatBytes(job.currentTotalBytes)}${currentPercent === null ? '' : ` · ${currentPercent}%`}`
+      : `${formatBytes(job.currentBytes)} загружено${currentPercent === null ? ' · размер неизвестен' : ` · ${currentPercent}%`}`;
+  }
+  const transferLabelEl = byId('transfer-label');
+  if (transferLabelEl) {
+    transferLabelEl.textContent = (job.currentSetName || (job.currentSetId ? `Набор ${job.currentSetId}` : 'Прогресс текущего набора')) + (job.currentMirror ? ` · ${job.currentMirror}` : '') + (job.noVideo ? ' · без видео' : '');
+  }
+  const dlCountEl = byId('downloaded-count');
+  if (dlCountEl) dlCountEl.textContent = String(job.downloaded);
+  const skipCountEl = byId('skipped-count');
+  if (skipCountEl) skipCountEl.textContent = String(job.skipped);
+  const failCountEl = byId('failed-count');
+  if (failCountEl) failCountEl.textContent = String(job.failed);
   const failedDetails = byId('failed-details');
   const failedList = byId('failed-list');
   const failedCountSpan = byId('failed-summary-count');
   if (failedDetails && failedList && failedCountSpan) {
-    if (Array.isArray(job.errors) && job.errors.length > 0) {
-      failedDetails.hidden = false;
-      failedCountSpan.textContent = String(job.errors.length);
-      failedList.replaceChildren();
-      for (const err of job.errors) {
-        const item = document.createElement('div');
-        item.className = 'failed-item';
-        const title = document.createElement('div');
-        title.className = 'failed-item-title';
-        title.textContent = err.name || `Набор ${err.id}`;
-        const reason = document.createElement('div');
-        reason.className = 'failed-item-reason';
-        reason.textContent = err.error || 'Ошибка загрузки';
-        item.append(title, reason);
-        failedList.append(item);
+    if (Array.isArray(job.errors)) {
+      const errorCount = job.errors.length;
+      if (errorCount > 0) {
+        failedDetails.hidden = false;
+        failedCountSpan.textContent = String(errorCount);
+        const lastErr = job.errors[errorCount - 1];
+        const firstErr = job.errors[0];
+        const errorsSig = `${errorCount}:${firstErr?.id}:${lastErr?.id}:${lastErr?.error}`;
+        if (errorsSig !== lastRenderedErrorsSignature) {
+          lastRenderedErrorsSignature = errorsSig;
+          lastRenderedErrorsCount = errorCount;
+          failedList.replaceChildren();
+          for (const err of job.errors) {
+            const item = document.createElement('div');
+            item.className = 'failed-item';
+            const title = document.createElement('div');
+            title.className = 'failed-item-title';
+            title.textContent = err.name || `Набор ${err.id}`;
+            const reason = document.createElement('div');
+            reason.className = 'failed-item-reason';
+            reason.textContent = err.error || 'Ошибка загрузки';
+            item.append(title, reason);
+            failedList.append(item);
+          }
+        }
+      } else if (lastRenderedErrorsCount !== 0) {
+        failedDetails.hidden = true;
+        failedList.replaceChildren();
+        lastRenderedErrorsSignature = '';
+        lastRenderedErrorsCount = 0;
       }
-    } else {
-      failedDetails.hidden = true;
-      failedList.replaceChildren();
     }
   }
   const tone = job.failed && job.status === 'finished_with_errors' ? 'error' : job.status === 'paused' ? 'warn' : job.status === 'finished' ? 'success' : '';
@@ -1137,6 +1169,9 @@ function hasActiveCooldowns() {
 }
 
 function finishJob(job, errorMessage = '') {
+  lastRenderedErrorsSignature = null;
+  lastRenderedErrorsCount = -1;
+  lastMirrorsSignature = null;
   stopJobStream();
   stopPolling();
   activeJob = null;
@@ -1446,5 +1481,6 @@ if (typeof module !== 'undefined' && module.exports) {
     renderCollection,
     setCollection,
     getCollection,
+    updateJob,
   };
 }
