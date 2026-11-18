@@ -1216,10 +1216,11 @@ describe('Интеграция с локальной директорией osu!
       assert.equal(isForbiddenSystemDir('/sys'), true);
     });
 
-    test('resolveOsuSongsDir отклоняет корни дисков (C:\\, D:\\) даже если на диске есть файлы/папки с цифрами', () => {
+    test('resolveOsuSongsDir отклоняет корни дисков (C:\\, D:\\, /) даже если на диске есть файлы/папки с цифрами', () => {
       // Даже если на диске есть '3D Objects' или '1C', корень C:\ никогда не принимается за Songs
       assert.equal(resolveOsuSongsDir('C:\\'), null);
       assert.equal(resolveOsuSongsDir('D:\\'), null);
+      assert.equal(resolveOsuSongsDir('/'), null);
     });
 
     test('resolveOsuSongsDir отклоняет папки с обычными файлами, начинающимися с цифр (1.txt, 2026_report.pdf)', async () => {
