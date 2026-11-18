@@ -24,6 +24,9 @@ const {
   isSetInOsuSongs,
   classifyCollectionSets,
   extractZip,
+  DEFAULT_MAX_ZIP_FILES,
+  DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES,
+  DEFAULT_MAX_ZIP_COMPRESSION_RATIO,
   moveFile,
   buildBeatmapFolderName,
   handlePostDownload,
@@ -33,7 +36,9 @@ const {
 const {
   jobFilePath,
   downloadSet,
+  verifyZipFile,
 } = require('../lib/downloader.js');
+const { MAX_OSZ_DOWNLOAD_BYTES } = require('../lib/config.js');
 
 const {
   jobs,
@@ -43,7 +48,7 @@ const {
 
 /**
  * Создает валидный ZIP-буфер в памяти для тестирования extractZip.
- * @param {Record<string, string | Buffer | { content: string | Buffer, crc?: number }>} files
+ * @param {Record<string, string | Buffer | { content: string | Buffer, crc?: number, compSize?: number, uncompSize?: number }>} files
  * @returns {Buffer}
  */
 function createMockZip(files) {
@@ -54,16 +59,24 @@ function createMockZip(files) {
   for (const [name, fileDef] of Object.entries(files)) {
     let content = fileDef;
     let customCrc = null;
+    let customUncompSize = null;
+    let customCompSize = null;
     if (typeof fileDef === 'object' && !Buffer.isBuffer(fileDef) && fileDef !== null && 'content' in fileDef) {
       // @ts-ignore
       content = fileDef.content;
       // @ts-ignore
       customCrc = fileDef.crc;
+      // @ts-ignore
+      customUncompSize = fileDef.uncompSize;
+      // @ts-ignore
+      customCompSize = fileDef.compSize;
     }
     const raw = Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'utf8');
     const deflated = zlib.deflateRawSync(raw);
     const nameBuf = Buffer.from(name.replace(/\\/g, '/'), 'utf8');
     const crc = typeof customCrc === 'number' ? customCrc : zlib.crc32(raw);
+    const uncompLen = typeof customUncompSize === 'number' ? customUncompSize : raw.length;
+    const compLen = typeof customCompSize === 'number' ? customCompSize : deflated.length;
 
     // Local Header (PK\x03\x04)
     const lh = Buffer.alloc(30 + nameBuf.length);
@@ -74,8 +87,8 @@ function createMockZip(files) {
     lh.writeUInt16LE(0, 10);
     lh.writeUInt16LE(0, 12);
     lh.writeUInt32LE(crc, 14);
-    lh.writeUInt32LE(deflated.length, 18);
-    lh.writeUInt32LE(raw.length, 22);
+    lh.writeUInt32LE(compLen, 18);
+    lh.writeUInt32LE(uncompLen, 22);
     lh.writeUInt16LE(nameBuf.length, 26);
     lh.writeUInt16LE(0, 28);
     nameBuf.copy(lh, 30);
@@ -94,8 +107,8 @@ function createMockZip(files) {
     ch.writeUInt16LE(0, 12);
     ch.writeUInt16LE(0, 14);
     ch.writeUInt32LE(crc, 16);
-    ch.writeUInt32LE(deflated.length, 20);
-    ch.writeUInt32LE(raw.length, 24);
+    ch.writeUInt32LE(compLen, 20);
+    ch.writeUInt32LE(uncompLen, 24);
     ch.writeUInt16LE(nameBuf.length, 28);
     ch.writeUInt16LE(0, 30);
     ch.writeUInt16LE(0, 32);
@@ -1038,5 +1051,149 @@ describe('Интеграция с локальной директорией osu!
     // Поддерживает mockPath
     const res2 = await selectFolderDialog('', { mockPath: 'C:\\Games\\osu!' });
     assert.equal(res2, 'C:\\Games\\osu!');
+  });
+
+  describe('Безопасность extractZip: лимиты распаковки и валидация .osz архивов (P0)', () => {
+    test('DEFAULT_MAX_ZIP_FILES, DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES и DEFAULT_MAX_ZIP_COMPRESSION_RATIO имеют безопасные дефолты', () => {
+      assert.equal(DEFAULT_MAX_ZIP_FILES, 500);
+      assert.equal(DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES, 500 * 1024 * 1024);
+      assert.equal(DEFAULT_MAX_ZIP_COMPRESSION_RATIO, 100);
+      assert.equal(MAX_OSZ_DOWNLOAD_BYTES, 500 * 1024 * 1024);
+    });
+
+    test('extractZip отклоняет пустой ZIP-архив (0 файлов)', async () => {
+      const emptyZip = Buffer.from([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      const zipPath = path.join(tempBaseDir, 'empty_archive.osz');
+      await fs.promises.writeFile(zipPath, emptyZip);
+      const outDir = path.join(tempBaseDir, 'out_empty');
+
+      await assert.rejects(
+        () => extractZip(zipPath, outDir),
+        /архив пуст/
+      );
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    test('extractZip отклоняет архив при превышении лимита файлов (zip-бомба по числу файлов)', async () => {
+      /** @type {Record<string, string>} */
+      const files = {};
+      for (let i = 0; i < 15; i++) {
+        files[`file_${i}.txt`] = `content ${i}`;
+      }
+      const zipBuf = createMockZip(files);
+      const zipPath = path.join(tempBaseDir, 'many_files.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_many');
+
+      // Передаём maxFiles: 10 при 15 файлах в архиве
+      await assert.rejects(
+        () => extractZip(zipPath, outDir, { maxFiles: 10 }),
+        /количество файлов \(15\) превышает лимит \(10\)/
+      );
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    test('extractZip отклоняет архив при превышении суммарного распакованного размера (zip-бомба по размеру)', async () => {
+      const zipBuf = createMockZip({
+        'huge1.dat': { content: 'small payload', uncompSize: 200 * 1024 * 1024 },
+      });
+      const zipPath = path.join(tempBaseDir, 'huge_uncomp.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_huge');
+
+      await assert.rejects(
+        () => extractZip(zipPath, outDir, { maxUncompressedBytes: 100 * 1024 * 1024 }),
+        /Превышен максимальный суммарный размер распакованных данных/
+      );
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    test('extractZip отклоняет файл с подозрительно высокой степенью сжатия (compression ratio > 100:1)', async () => {
+      // Имитируем запись в заголовке: сжато 10 байт, распаковано 50000 байт (ratio 5000:1)
+      const zipBuf = createMockZip({
+        'bomb.txt': { content: 'test', compSize: 10, uncompSize: 50000 },
+      });
+      const zipPath = path.join(tempBaseDir, 'ratio_bomb.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_ratio');
+
+      await assert.rejects(
+        () => extractZip(zipPath, outDir, { maxCompressionRatio: 100 }),
+        /Подозрительно высокая степень сжатия файла/
+      );
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    test('extractZip с validateBeatmap: true отклоняет архив без файлов .osu', async () => {
+      const zipBuf = createMockZip({
+        'audio.mp3': 'mp3 audio data',
+        'bg.jpg': 'image data',
+        'something.txt': 'no beatmaps here',
+      });
+      const zipPath = path.join(tempBaseDir, 'no_osu.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_no_osu');
+
+      await assert.rejects(
+        () => extractZip(zipPath, outDir, { validateBeatmap: true }),
+        /архив не содержит файлов карт \(\.osu\)/
+      );
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    test('extractZip с validateBeatmap: true отклоняет архив с невалидным заголовком .osu', async () => {
+      const zipBuf = createMockZip({
+        'corrupt.osu': 'random text without osu file format header',
+      });
+      const zipPath = path.join(tempBaseDir, 'corrupt_header.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_corrupt_header');
+
+      await assert.rejects(
+        () => extractZip(zipPath, outDir, { validateBeatmap: true }),
+        /ни один файл \.osu не содержит валидного заголовка формата osu!/
+      );
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    test('extractZip с validateBeatmap: true и expectedSetId отклоняет архив с чужим BeatmapSetID', async () => {
+      const zipBuf = createMockZip({
+        'song.osu': 'osu file format v14\r\nTitle:Song\r\nBeatmapSetID:99999\r\n',
+      });
+      const zipPath = path.join(tempBaseDir, 'wrong_id.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_wrong_id');
+
+      await assert.rejects(
+        () => extractZip(zipPath, outDir, { validateBeatmap: true, expectedSetId: 11111 }),
+        /Несоответствие BeatmapSetID: архив содержит карты для набора \(99999\), ожидался 11111/
+      );
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    test('extractZip с validateBeatmap: true и expectedSetId успешно распаковывает архив с совпадающим BeatmapSetID', async () => {
+      const zipBuf = createMockZip({
+        'audio.mp3': 'audio content',
+        'song.osu': 'osu file format v14\r\nTitle:Matching Song\r\nBeatmapSetID:44444\r\n',
+      });
+      const zipPath = path.join(tempBaseDir, 'correct_id.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_correct_id');
+
+      const count = await extractZip(zipPath, outDir, { validateBeatmap: true, expectedSetId: 44444 });
+      assert.equal(count, 2);
+      assert.equal(fs.existsSync(path.join(outDir, 'audio.mp3')), true);
+      assert.equal(fs.existsSync(path.join(outDir, 'song.osu')), true);
+    });
+
+    test('verifyZipFile отклоняет файлы, превышающие MAX_OSZ_DOWNLOAD_BYTES (500 МБ)', async () => {
+      /** @type {any} */
+      const fakeHandle = {
+        read: async () => ({ bytesRead: 0 }),
+      };
+      // Размер 600 МБ
+      const tooLarge = await verifyZipFile(fakeHandle, 600 * 1024 * 1024);
+      assert.equal(tooLarge, false);
+    });
   });
 });
