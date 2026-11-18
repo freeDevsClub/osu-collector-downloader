@@ -47,6 +47,7 @@ const {
   isPrivateIp,
   redirectHostAllowed,
   mirrorRedirectAllowed,
+  createPinnedLookup,
 } = require('./lib/security.js');
 
 const {
@@ -83,6 +84,7 @@ const {
   verifyZipFile,
   downloadSet,
   downloadFromMirrors,
+  safeDownloadFetch,
 } = require('./lib/downloader.js');
 
 const {
@@ -1045,9 +1047,11 @@ module.exports = {
   isPrivateIPv6,
   isPrivateIp,
   mirrorRedirectAllowed,
+  createPinnedLookup,
   redirectHostAllowed,
   downloadFromMirrors,
   downloadSet,
+  safeDownloadFetch,
   fetchMapsetInfo,
   fetchCollection,
   populateMetadataInBackground,
