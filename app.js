@@ -48,7 +48,6 @@ function formatPluralRu(count, one, few, many) {
 
 const collectionForm = byId('collection-form');
 const sessionForm = byId('session-form');
-const oauthForm = byId('oauth-form');
 const collectionUrl = byId('collection-url');
 const previewButton = byId('preview-button');
 const downloadButton = byId('download-button');
@@ -120,7 +119,6 @@ let pollTimer = null;
 let pollInFlight = false;
 let pollFailures = 0;
 let sessionConnected = false;
-let oauthState = { enabled: true, configured: false, connected: false, callbackUrl: '' };
 let mirrorStatus = [];
 let osuSettings = {
   osuPath: '',
@@ -167,12 +165,12 @@ async function api(url, options = {}) {
 
 function selectedMethod() {
   const value = methodInputs.find(input => input.checked)?.value;
-  return value === 'session' || value === 'oauth' ? value : 'mirror';
+  return value === 'session' ? 'session' : 'mirror';
 }
 
 function methodReady(method) {
   if (method === 'mirror') return true;
-  return method === 'oauth' ? (oauthState.enabled && oauthState.connected) : sessionConnected;
+  return sessionConnected;
 }
 
 function updateDownloadButton() {
@@ -193,40 +191,6 @@ function updateDownloadButton() {
 methodInputs.forEach(input => {
   input.addEventListener('change', updateDownloadButton);
 });
-
-function renderOauthStatus(status) {
-  oauthState = {
-    enabled: status?.enabled ?? true,
-    configured: Boolean(status.configured),
-    connected: Boolean(status.connected),
-    callbackUrl: status.callbackUrl || '',
-  };
-  const dot = byId('oauth-dot');
-  const text = byId('oauth-text');
-  dot.classList.toggle('connected', oauthState.connected);
-  if (!oauthState.enabled) text.textContent = 'OAuth отключён на сервере (запустите с ENABLE_OAUTH=1)';
-  else if (oauthState.connected) text.textContent = `Токен получен${status.kind === 'authorization_code' ? ' для вашего аккаунта' : ' (клиентские учётные данные)'}`;
-  else if (oauthState.configured) text.textContent = 'Приложение сохранено — войдите через osu!';
-  else text.textContent = 'OAuth-приложение не настроено';
-  byId('oauth-disconnect').hidden = !oauthState.enabled || !oauthState.connected;
-  byId('oauth-authorize').disabled = !oauthState.enabled || !oauthState.configured || oauthState.connected;
-  byId('oauth-authorize').textContent = oauthState.connected ? 'Подключено' : 'Войти через osu!';
-  const saveBtn = byId('oauth-save');
-  if (saveBtn) saveBtn.disabled = !oauthState.enabled;
-  const clientIdInput = byId('oauth-client-id');
-  const secretInput = byId('oauth-client-secret');
-  if (oauthState.configured) {
-    clientIdInput.value = status.clientId || '';
-    clientIdInput.required = true;
-    secretInput.required = false;
-    secretInput.placeholder = 'Секрет сохранён; заполните, чтобы заменить';
-  } else {
-    clientIdInput.required = true;
-    secretInput.required = true;
-  }
-  if (oauthState.callbackUrl) byId('oauth-callback-code').textContent = oauthState.callbackUrl;
-  updateDownloadButton();
-}
 
 function renderSessionState(connected) {
   sessionConnected = connected;
@@ -844,7 +808,7 @@ downloadButton?.addEventListener('click', async () => {
   if (!collection) return;
   const method = selectedMethod();
   if (!methodReady(method)) {
-    setStatus(downloadStatus, method === 'oauth' ? 'Сначала подключите OAuth-приложение и войдите через osu!.' : 'Сначала сохраните cookie osu_session.', 'error');
+    setStatus(downloadStatus, 'Сначала сохраните cookie osu_session.', 'error');
     return;
   }
   downloadButton.disabled = true;
@@ -875,9 +839,6 @@ downloadButton?.addEventListener('click', async () => {
     if (pausedJob) {
       resumeButton.hidden = false;
       cancelButton.hidden = false;
-    }
-    if (method === 'oauth') {
-      try { await loadOauthStatus(); } catch {}
     }
     downloadButton.disabled = false;
     updateDownloadButton();
@@ -1215,7 +1176,7 @@ resumeButton?.addEventListener('click', async () => {
   if (!pausedJob) return;
   const method = selectedMethod();
   if (!methodReady(method)) {
-    setStatus(downloadStatus, method === 'oauth' ? 'Сначала подключите OAuth-приложение и войдите через osu!.' : 'Сначала сохраните cookie osu_session.', 'error');
+    setStatus(downloadStatus, 'Сначала сохраните cookie osu_session.', 'error');
     return;
   }
   resumeButton.disabled = true;
@@ -1241,7 +1202,7 @@ if (retryFailedButton) {
     if (!targetId) return;
     const method = selectedMethod();
     if (!methodReady(method)) {
-      setStatus(downloadStatus, method === 'oauth' ? 'Сначала подключите OAuth-приложение и войдите через osu!.' : 'Сначала сохраните cookie osu_session.', 'error');
+      setStatus(downloadStatus, 'Сначала сохраните cookie osu_session.', 'error');
       return;
     }
     retryFailedButton.disabled = true;
@@ -1280,65 +1241,6 @@ cancelButton?.addEventListener('click', async () => {
     notify(toAny(rawError).message);
   } finally {
     cancelButton.disabled = false;
-  }
-});
-
-async function loadOauthStatus() {
-  const status = await api('/api/oauth/status');
-  renderOauthStatus(status);
-  return status;
-}
-
-oauthForm?.addEventListener('submit', async event => {
-  event.preventDefault();
-  const clientId = byId('oauth-client-id')?.value.trim();
-  const clientSecret = byId('oauth-client-secret')?.value.trim();
-  if (!clientId || (!clientSecret && !oauthState.configured)) {
-    setStatus(byId('oauth-status'), 'Укажите Client ID и Client Secret.', 'error');
-    return;
-  }
-  const button = byId('oauth-save');
-  if (button) {
-    button.disabled = true;
-    button.textContent = 'Сохраняю…';
-  }
-  try {
-    const status = await api('/api/oauth/config', { method: 'POST', body: JSON.stringify({ clientId, clientSecret }) });
-    const secretInput = byId('oauth-client-secret');
-    if (secretInput) secretInput.value = '';
-    renderOauthStatus(status);
-    setStatus(byId('oauth-status'), 'Приложение сохранено. Теперь войдите через osu!.', 'success');
-    notify('OAuth-приложение сохранено только в памяти приложения.');
-  } catch (rawError) {
-    setStatus(byId('oauth-status'), toAny(rawError).message, 'error');
-  } finally {
-    if (button) {
-      button.disabled = false;
-      button.textContent = 'Сохранить';
-    }
-  }
-});
-
-byId('oauth-authorize')?.addEventListener('click', async () => {
-  const button = byId('oauth-authorize');
-  if (button) button.disabled = true;
-  try {
-    const { authorizeUrl } = await api('/api/oauth/start', { method: 'POST', body: '{}' });
-    if (typeof window !== 'undefined') window.location.assign(authorizeUrl);
-  } catch (rawError) {
-    setStatus(byId('oauth-status'), toAny(rawError).message, 'error');
-    if (button) button.disabled = false;
-  }
-});
-
-byId('oauth-disconnect')?.addEventListener('click', async () => {
-  try {
-    const status = await api('/api/oauth/disconnect', { method: 'DELETE' });
-    renderOauthStatus(status);
-    setStatus(byId('oauth-status'), 'Токен отозван локально.', '');
-    notify('Доступ OAuth отключён.');
-  } catch (rawError) {
-    notify(toAny(rawError).message);
   }
 });
 
@@ -1415,17 +1317,8 @@ if (typeof window !== 'undefined') {
 }
 
 async function initialize() {
-  const params = new URLSearchParams(window.location.search);
-  const oauthResult = params.get('oauth');
-  const oauthError = params.get('oauth_error');
-  if (oauthResult || oauthError) {
-    window.history.replaceState({}, '', window.location.pathname);
-  }
-
-  // Запросы не блокируют друг друга: сбой OAuth не скрывает cookie-сессию
-  const [sessionRes, oauthRes] = await Promise.allSettled([
+  const [sessionRes] = await Promise.allSettled([
     api('/api/session'),
-    loadOauthStatus(),
     loadMirrors(),
     loadOsuSettings(),
   ]);
@@ -1434,21 +1327,6 @@ async function initialize() {
     renderSessionState(Boolean(sessionRes.value?.connected));
   } else {
     renderSessionState(false);
-  }
-
-  if (oauthRes.status === 'fulfilled') {
-    const status = oauthRes.value;
-    if (oauthResult === 'connected') {
-      setStatus(byId('oauth-status'), 'Авторизация osu! прошла успешно — можно скачивать.', 'success');
-      notify('Вы вошли через osu!.');
-    } else if (oauthError) {
-      setStatus(byId('oauth-status'), `Авторизация не завершена: ${oauthError}`, 'error');
-    } else if (status && !status.connected && status.configured) {
-      setStatus(byId('oauth-status'), 'Приложение сохранено, но токен ещё не получен.', '');
-    }
-  }
-
-  if (sessionRes.status === 'rejected' && oauthRes.status === 'rejected') {
     const error = sessionRes.reason;
     if (error?.name === 'TimeoutError') {
       setStatus(collectionStatus, 'Локальный сервер не отвечает — он запущен?', 'error');

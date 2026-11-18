@@ -12,9 +12,6 @@ const {
   ROOT,
   getDownloadsDir,
   MAX_BODY,
-  ENABLE_OAUTH,
-  isOAuthEnabled,
-  CALLBACK_URL,
   MIRRORS,
   DEFAULT_MIRRORS,
   MIRROR_COOLDOWN_DEFAULT_MS,
@@ -34,6 +31,11 @@ const {
 } = require('./lib/config.js');
 
 const {
+  sessions,
+  cookieOptions,
+  setTokenCookie,
+  getSession,
+  pruneSessions,
   addRedaction,
   removeRedaction,
   clearRedactions,
@@ -108,23 +110,6 @@ const {
   waitForPendingSaveState,
 } = require('./lib/jobs.js');
 
-const {
-  sessions,
-  oauthConfig,
-  oauthToken,
-  oauthStates,
-  cookieOptions,
-  setTokenCookie,
-  getSession,
-  oauthConfigured,
-  buildAuthorizeUrl,
-  oauthStatus,
-  storeOsuToken,
-  ensureOsuToken,
-  handleOauthCallback,
-  pruneSessionsAndOauth,
-} = require('./lib/oauth.js');
-
 const osu = require('./lib/osu.js');
 const {
   getSettings: getOsuSettings,
@@ -161,7 +146,7 @@ async function readJson(req) {
 }
 
 /**
- * Определяет параметры аутентификации для задачи (зеркала, session, oauth).
+ * Определяет параметры аутентификации для задачи (зеркала, session).
  * @param {import('node:http').IncomingMessage} req
  * @param {{ method: string }} job
  * @returns {Promise<any>}
@@ -169,13 +154,6 @@ async function readJson(req) {
 async function resolveJobAuth(req, job) {
   if (job.method === 'mirror') {
     return { kind: 'mirror' };
-  }
-  if (job.method === 'oauth') {
-    if (!isOAuthEnabled()) {
-      throw new HttpError(403, 'OAuth-метод отключён на сервере (запустите с ENABLE_OAUTH=1).');
-    }
-    const token = await ensureOsuToken();
-    return { kind: 'oauth', token };
   }
   const session = getSession(req);
   if (!session) {
@@ -317,94 +295,6 @@ async function handleApi(req, res, url) {
     });
   }
 
-  if (url.pathname === '/api/oauth/status') {
-    if (req.method !== 'GET') return handleMethodNotAllowed(req, res, ['GET']);
-    const status = oauthStatus();
-    const oauthActive = isOAuthEnabled();
-    return json(res, 200, {
-      enabled: oauthActive,
-      configured: oauthActive ? status.configured : false,
-      connected: oauthActive ? status.connected : false,
-      kind: oauthActive ? status.kind : null,
-      scope: oauthActive ? status.scope : null,
-      expiresAt: oauthActive ? status.expiresAt : null,
-      clientId: oauthActive ? status.clientId : null,
-      callbackUrl: status.callbackUrl,
-    });
-  }
-
-  if (url.pathname === '/api/oauth/config') {
-    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
-    if (!isOAuthEnabled()) {
-      return json(res, 403, { error: 'OAuth-авторизация отключена на сервере (запустите с ENABLE_OAUTH=1).' });
-    }
-    const body = await readJson(req);
-    const requestedClientId = typeof body.clientId === 'string' || Number.isSafeInteger(body.clientId) ? String(body.clientId || '').trim() : '';
-    const clientId = requestedClientId || oauthConfig.clientId;
-    const suppliedSecret = typeof body.clientSecret === 'string' ? body.clientSecret.trim() : '';
-    const replacingSecret = suppliedSecret.length > 0;
-    const clientSecret = replacingSecret ? suppliedSecret : oauthConfig.clientSecret;
-    if (!clientId || !/^\d{1,16}$/.test(clientId)) return json(res, 400, { error: 'Укажите числовой Client ID из настроек osu!.' });
-    if (!clientSecret || clientSecret.length > 256 || /[\s;\r\n]/.test(clientSecret)) return json(res, 400, { error: 'Укажите Client Secret вашего OAuth-приложения.' });
-    if (oauthConfig.clientId && oauthConfig.clientId !== clientId && !replacingSecret) return json(res, 400, { error: 'При смене Client ID укажите соответствующий ему Client Secret.' });
-    const changed = oauthConfig.clientId !== clientId || (replacingSecret && oauthConfig.clientSecret !== clientSecret);
-    oauthConfig.clientId = clientId;
-    if (replacingSecret || !oauthConfig.clientSecret) {
-      if (oauthConfig.clientSecret && oauthConfig.clientSecret !== clientSecret) {
-        removeRedaction(oauthConfig.clientSecret);
-      }
-      oauthConfig.clientSecret = clientSecret;
-      addRedaction(clientSecret);
-    }
-    if (changed) {
-      removeRedaction(oauthToken.accessToken);
-      removeRedaction(oauthToken.refreshToken);
-      oauthToken.accessToken = null;
-      oauthToken.refreshToken = null;
-      oauthToken.expiresAt = 0;
-      oauthToken.kind = null;
-      oauthToken.scope = null;
-    }
-    log('info', 'oauth.config.saved', { clientId, changed });
-    return json(res, 200, oauthStatus());
-  }
-
-  if (url.pathname === '/api/oauth/start') {
-    if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
-    if (!isOAuthEnabled()) {
-      return json(res, 403, { error: 'OAuth-авторизация отключена на сервере (запустите с ENABLE_OAUTH=1).' });
-    }
-    const body = await readJson(req);
-    const requestedClientId = typeof body.clientId === 'string' || Number.isSafeInteger(body.clientId) ? String(body.clientId || '').trim() : '';
-    const clientId = requestedClientId || oauthConfig.clientId;
-    if (!oauthConfigured()) return json(res, 400, { error: 'Сначала сохраните Client ID и Client Secret.' });
-    const state = crypto.randomBytes(24).toString('hex');
-    const nonce = crypto.randomBytes(24).toString('hex');
-    oauthStates.set(state, { nonce, expiresAt: Date.now() + 10 * 60 * 1000 });
-    log('info', 'oauth.authorize.started', { callback: CALLBACK_URL, scope: 'public identify' });
-    const secure = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
-    res.setHeader('Set-Cookie', `osu_oauth_state=${nonce}; Path=/oauth/callback; HttpOnly; SameSite=Lax; Max-Age=600${secure ? '; Secure' : ''}`);
-    return json(res, 200, { authorizeUrl: buildAuthorizeUrl(state) });
-  }
-
-  if (url.pathname === '/api/oauth/disconnect') {
-    if (req.method !== 'DELETE') return handleMethodNotAllowed(req, res, ['DELETE']);
-    if (!isOAuthEnabled()) {
-      return json(res, 403, { error: 'OAuth-авторизация отключена на сервере.' });
-    }
-    removeRedaction(oauthToken.accessToken);
-    removeRedaction(oauthToken.refreshToken);
-    oauthToken.accessToken = null;
-    oauthToken.refreshToken = null;
-    oauthToken.expiresAt = 0;
-    oauthToken.kind = null;
-    oauthToken.scope = null;
-    oauthStates.clear();
-    res.setHeader('Set-Cookie', `osu_oauth_state=; Path=/oauth/callback; HttpOnly; SameSite=Lax; Max-Age=0`);
-    log('info', 'oauth.disconnected');
-    return json(res, 200, oauthStatus());
-  }
-
   if (url.pathname === '/api/session') {
     if (req.method === 'GET') {
       return json(res, 200, { connected: Boolean(getSession(req)) });
@@ -543,7 +433,7 @@ async function handleApi(req, res, url) {
     if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     const body = await readJson(req);
     const requestedMethod = url.searchParams.get('method') || (typeof body?.method === 'string' ? body.method : null);
-    const method = requestedMethod === 'oauth' ? 'oauth' : requestedMethod === 'session' ? 'session' : 'mirror';
+    const method = requestedMethod === 'session' ? 'session' : 'mirror';
 
     let auth;
     try {
@@ -646,7 +536,7 @@ async function handleApi(req, res, url) {
 
     const body = await readJson(req).catch(() => ({}));
     const requestedMethod = url.searchParams.get('method') || (typeof body?.method === 'string' ? body.method : null);
-    const method = requestedMethod && ['mirror', 'session', 'oauth'].includes(requestedMethod)
+    const method = requestedMethod && ['mirror', 'session'].includes(requestedMethod)
       ? requestedMethod
       : job.method;
     const noVideoParam = url.searchParams.get('noVideo');
@@ -684,7 +574,7 @@ async function handleApi(req, res, url) {
     }
 
     const requestedMethod = url.searchParams.get('method');
-    if (requestedMethod && ['mirror', 'session', 'oauth'].includes(requestedMethod)) {
+    if (requestedMethod && ['mirror', 'session'].includes(requestedMethod)) {
       job.method = requestedMethod;
     }
     const noVideoParam = url.searchParams.get('noVideo');
@@ -874,14 +764,6 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (url.pathname === '/oauth/callback') {
-      if (req.method !== 'GET') {
-        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET' });
-        return res.end('Method not allowed');
-      }
-      return await handleOauthCallback(req, res, url);
-    }
-
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
 
     if (url.pathname === '/favicon.ico') {
@@ -928,7 +810,7 @@ const server = http.createServer(async (req, res) => {
 // Периодическая очистка устаревших кешей и сессий
 setInterval(() => {
   pruneCollectionCache();
-  pruneSessionsAndOauth();
+  pruneSessions();
   pruneJobs();
 }, 60 * 1000).unref();
 
@@ -982,12 +864,9 @@ async function startServer(port = PORT, host = HOST) {
         url: `http://${host}:${port}`,
         node: process.version,
         downloadsDirectory: getDownloadsDir(),
-        oauthCallback: CALLBACK_URL,
-        oauthEnabled: ENABLE_OAUTH,
-        oauthConfigured: oauthConfigured(),
         downloadMirrors: MIRRORS.map(mirror => mirror.id),
       });
-      log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.${ENABLE_OAUTH ? ' OAuth включён.' : ' OAuth отключён флагом (ENABLE_OAUTH=1 для включения).'}` });
+      log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.` });
       resolve(server);
     });
   });
@@ -1009,7 +888,6 @@ if (require.main === module) {
       if (isShuttingDown) return;
       isShuttingDown = true;
       for (const token of sessions.keys()) sessions.delete(token);
-      oauthStates.clear();
       for (const job of jobs.values()) {
         if (['queued', 'running'].includes(job.status)) {
           job.status = 'paused';
@@ -1083,11 +961,7 @@ module.exports = {
   emitJobUpdate,
   jobs,
   sessions,
-  oauthConfig,
-  oauthToken,
-  oauthStates,
-  storeOsuToken,
-  pruneSessionsAndOauth,
+  pruneSessions,
   activeRedactions,
   addRedaction,
   removeRedaction,

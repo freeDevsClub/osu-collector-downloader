@@ -123,15 +123,10 @@ describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn
     assert.equal(resCollRoot.status, 405);
     assert.equal(resCollRoot.headers['allow'], 'POST');
 
-    // 11. POST /api/oauth/status (поддерживается только GET)
-    const resOauthStatus = await request('POST', '/api/oauth/status');
-    assert.equal(resOauthStatus.status, 405);
-    assert.equal(resOauthStatus.headers['allow'], 'GET');
-
-    // 12. GET /api/oauth/config (поддерживается только POST)
-    const resOauthConfig = await request('GET', '/api/oauth/config');
-    assert.equal(resOauthConfig.status, 405);
-    assert.equal(resOauthConfig.headers['allow'], 'POST');
+    // 11. PUT /api/session (поддерживаются только GET, POST, DELETE)
+    const resSessionPut = await request('PUT', '/api/session');
+    assert.equal(resSessionPut.status, 405);
+    assert.equal(resSessionPut.headers['allow'], 'GET, POST, DELETE');
   });
 
   it('возвращает 204 No Content с заголовком Allow для OPTIONS запросов к API', async () => {

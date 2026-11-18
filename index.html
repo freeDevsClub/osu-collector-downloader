@@ -571,19 +571,6 @@
         background: #ffcf8a;
         box-shadow: 0 0 10px #ffcf8a66;
       }
-      .oauth-callback {
-        display: block;
-        margin-top: 10px;
-        font-size: 12px;
-        color: var(--muted);
-        overflow-wrap: anywhere;
-      }
-      .oauth-callback code {
-        background: #14141a;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 2px 5px;
-      }
       .transfer-details {
         display: flex;
         justify-content: space-between;
@@ -874,96 +861,6 @@
             </div>
           </section>
 
-          <!-- Метод OAuth по умолчанию отключён и скрыт: серверная и клиентская логика сохранены. Для включения см. README.md -->
-          <section id="oauth-card" class="card" hidden>
-            <h2>OAuth-авторизация (экспериментально)</h2>
-              <p class="hint">
-                Бесплатное OAuth-приложение с Client ID и Client Secret — вместо
-                cookie-сессии
-              </p>
-              <form id="oauth-form">
-                <div class="field">
-                  <label for="oauth-client-id">Client ID</label>
-                  <input
-                    id="oauth-client-id"
-                    name="clientId"
-                    type="text"
-                    placeholder="Числовой ID приложения"
-                    autocomplete="off"
-                    spellcheck="false"
-                    required
-                  />
-                </div>
-                <div class="field">
-                  <label for="oauth-client-secret">Client Secret</label>
-                  <input
-                    id="oauth-client-secret"
-                    name="clientSecret"
-                    type="password"
-                    placeholder="Client Secret приложения"
-                    autocomplete="off"
-                    spellcheck="false"
-                    required
-                  />
-                </div>
-                <div class="field-row">
-                  <button id="oauth-save" type="submit">Сохранить</button>
-                  <button
-                    id="oauth-authorize"
-                    type="button"
-                    class="secondary"
-                    disabled
-                  >
-                    Войти через osu!
-                  </button>
-                </div>
-              </form>
-              <div class="session-state">
-                <div class="session-label">
-                  <span id="oauth-dot" class="session-dot"></span
-                  ><span id="oauth-text">OAuth-приложение не настроено</span>
-                </div>
-                <button
-                  id="oauth-disconnect"
-                  class="secondary"
-                  type="button"
-                  hidden
-                >
-                  Отключить
-                </button>
-              </div>
-              <span class="oauth-callback"
-                >Callback URL:
-                <code id="oauth-callback-code"
-                  >http://127.0.0.1:3000/oauth/callback</code
-                ></span
-              >
-              <div
-                id="oauth-status"
-                class="status"
-                role="status"
-                aria-live="polite"
-              ></div>
-              <div class="notice">
-                <strong>Где взять Client ID и Client Secret</strong>
-                <p>
-                  Откройте
-                  <a
-                    href="https://osu.ppy.sh/home/account/edit#new-oauth-application"
-                    target="_blank"
-                    rel="noreferrer"
-                    >настройки аккаунта osu! → раздел OAuth</a
-                  >, создайте приложение и укажите Callback URL, показанный
-                  выше. Затем сохраните данные здесь и нажмите «Войти через
-                  osu!».
-                </p>
-              </div>
-              <p class="small">
-                Client Secret хранится только в памяти приложения и не покидает
-                ваш компьютер.
-              </p>
-          </section>
-
           <section id="osu-card" class="card">
             <h2>2. Интеграция с osu! Songs</h2>
             <p class="hint">
@@ -1140,16 +1037,6 @@
                   id="method-session"
                 /><span
                   >Cookie osu_session<small>резервный способ</small></span
-                ></label
-              >
-              <label class="method-option" id="option-oauth" hidden
-                ><input
-                  type="radio"
-                  name="download-method"
-                  value="oauth"
-                  id="method-oauth"
-                /><span
-                  >OAuth-токен<small>через ваше OAuth-приложение</small></span
                 ></label
               >
             </div>
