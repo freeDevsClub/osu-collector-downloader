@@ -23,6 +23,7 @@ const {
   saveSettings,
   isSetInOsuSongs,
   classifyCollectionSets,
+  isForbiddenSystemDir,
   extractZip,
   DEFAULT_MAX_ZIP_FILES,
   DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES,
@@ -1194,6 +1195,79 @@ describe('Интеграция с локальной директорией osu!
       // Размер 600 МБ
       const tooLarge = await verifyZipFile(fakeHandle, 600 * 1024 * 1024);
       assert.equal(tooLarge, false);
+    });
+  });
+
+  describe('Безопасность resolveOsuSongsDir: защита от захвата корней дисков и системных папок (P0)', () => {
+    test('isForbiddenSystemDir блокирует корни дисков (C:\\, D:\\, /)', () => {
+      assert.equal(isForbiddenSystemDir('C:\\'), true);
+      assert.equal(isForbiddenSystemDir('D:\\'), true);
+      assert.equal(isForbiddenSystemDir('/'), true);
+    });
+
+    test('isForbiddenSystemDir блокирует системные каталоги Windows/Unix', () => {
+      if (process.env.SystemRoot) {
+        assert.equal(isForbiddenSystemDir(process.env.SystemRoot), true);
+      }
+      if (process.env.ProgramFiles) {
+        assert.equal(isForbiddenSystemDir(process.env.ProgramFiles), true);
+      }
+      assert.equal(isForbiddenSystemDir('/proc'), true);
+      assert.equal(isForbiddenSystemDir('/sys'), true);
+    });
+
+    test('resolveOsuSongsDir отклоняет корни дисков (C:\\, D:\\) даже если на диске есть файлы/папки с цифрами', () => {
+      // Даже если на диске есть '3D Objects' или '1C', корень C:\ никогда не принимается за Songs
+      assert.equal(resolveOsuSongsDir('C:\\'), null);
+      assert.equal(resolveOsuSongsDir('D:\\'), null);
+    });
+
+    test('resolveOsuSongsDir отклоняет папки с обычными файлами, начинающимися с цифр (1.txt, 2026_report.pdf)', async () => {
+      const randomFolder = path.join(tempBaseDir, 'RandomUserDocs');
+      await fs.promises.mkdir(randomFolder, { recursive: true });
+      await fs.promises.writeFile(path.join(randomFolder, '1.txt'), 'hello');
+      await fs.promises.writeFile(path.join(randomFolder, '2026_annual_report.pdf'), 'pdf content');
+
+      // Папка содержит файлы с цифрами в начале имени, но НЕ содержит beatmap-структуры
+      assert.equal(resolveOsuSongsDir(randomFolder), null);
+    });
+
+    test('resolveOsuSongsDir успешно разрешает отдельную папку osu! на другом диске, содержащую ТОЛЬКО Songs', async () => {
+      // Моделируем конфигурацию, когда игра на C:, а папка Songs вынесена на D:\osu!\Songs (без osu!.exe и osu!.db)
+      const isolatedOsuRoot = path.join(tempBaseDir, 'IsolatedOsuOnOtherDrive');
+      const isolatedSongs = path.join(isolatedOsuRoot, 'Songs');
+      await fs.promises.mkdir(isolatedSongs, { recursive: true });
+
+      // 1. Указан путь к D:\osu! (содержит только Songs) -> находит D:\osu!\Songs
+      assert.equal(resolveOsuSongsDir(isolatedOsuRoot), isolatedSongs);
+
+      // 2. Указан прямой путь к D:\osu!\Songs -> возвращает его
+      assert.equal(resolveOsuSongsDir(isolatedSongs), isolatedSongs);
+    });
+
+    test('resolveOsuSongsDir успешно разрешает прямой путь к Songs на отдельном диске (например D:\\Songs)', async () => {
+      const directSongs = path.join(tempBaseDir, 'StandaloneSongs');
+      const songsPath = path.join(directSongs, 'Songs');
+      await fs.promises.mkdir(songsPath, { recursive: true });
+
+      assert.equal(resolveOsuSongsDir(songsPath), songsPath);
+    });
+
+    test('resolveOsuSongsDir распознает нестандартную папку карт по наличию подпапок с файлами .osu', async () => {
+      const customBeatmapsDir = path.join(tempBaseDir, 'MyBeatmapsArchive');
+      const mapSetFolder = path.join(customBeatmapsDir, '123456 Camellia - Crystallized');
+      await fs.promises.mkdir(mapSetFolder, { recursive: true });
+      await fs.promises.writeFile(path.join(mapSetFolder, 'diff.osu'), 'osu file format v14\r\n');
+
+      assert.equal(resolveOsuSongsDir(customBeatmapsDir), customBeatmapsDir);
+    });
+
+    test('resolveOsuSongsDir распознает нестандартную папку карт по наличию .osz файлов', async () => {
+      const oszFolder = path.join(tempBaseDir, 'MyOszPacks');
+      await fs.promises.mkdir(oszFolder, { recursive: true });
+      await fs.promises.writeFile(path.join(oszFolder, '99999.osz'), 'mock osz');
+
+      assert.equal(resolveOsuSongsDir(oszFolder), oszFolder);
     });
   });
 });
