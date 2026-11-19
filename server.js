@@ -341,9 +341,14 @@ async function handleApi(req, res, url) {
     }
     if (req.method === 'POST') {
       const body = await readJson(req);
-      const session = typeof body.session === 'string' ? body.session.trim() : '';
-      if (session.length < 20 || session.length > 4096 || /[;\r\n]/.test(session)) {
-        return json(res, 400, { error: 'Проверьте значение cookie osu_session.' });
+      let session = typeof body?.session === 'string' ? body.session.trim() : '';
+      if (session.toLowerCase().startsWith('osu_session=')) {
+        session = session.slice('osu_session='.length).trim();
+      }
+      if (session.length < 20 || session.length > 1024 || !/^[a-zA-Z0-9%_\-\.=/+|]+$/.test(session)) {
+        return json(res, 400, {
+          error: 'Некорректный формат cookie osu_session. Ожидается токен сессии osu.ppy.sh (без пробелов и спецсимволов).'
+        });
       }
       const cookies = parseCookies(req.headers.cookie);
       const existingToken = cookies['osu_collector_token'];

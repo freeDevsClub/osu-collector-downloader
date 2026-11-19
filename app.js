@@ -65,6 +65,8 @@ const progressTrack = byId('progress-track');
 const transferBar = byId('transfer-bar');
 const transferTrack = byId('transfer-track');
 const sessionInput = byId('session-cookie');
+const sessionRiskConfirm = /** @type {HTMLInputElement | null} */ (byId('session-risk-confirm'));
+const sessionAdvancedDetails = /** @type {HTMLDetailsElement | null} */ (byId('session-advanced-details'));
 const checkboxNoVideo = /** @type {HTMLInputElement | null} */ (byId('checkbox-novideo'));
 /** @type {HTMLInputElement[]} */
 const methodInputs = typeof document !== 'undefined' ? /** @type {any} */ ([...document.querySelectorAll('input[name="download-method"]')]) : [];
@@ -188,17 +190,46 @@ function updateDownloadButton() {
   });
 }
 
+function updateSessionSaveButton() {
+  const button = /** @type {HTMLButtonElement | null} */ (byId('session-save'));
+  if (!button) return;
+  const val = sessionInput ? sessionInput.value.trim() : '';
+  const cleanVal = val.toLowerCase().startsWith('osu_session=') ? val.slice('osu_session='.length).trim() : val;
+  const validLength = cleanVal.length >= 20 && cleanVal.length <= 1024;
+  const confirmed = Boolean(sessionRiskConfirm?.checked);
+  button.disabled = !validLength || !confirmed;
+}
+
+sessionInput?.addEventListener('input', updateSessionSaveButton);
+sessionRiskConfirm?.addEventListener('change', updateSessionSaveButton);
+
 methodInputs.forEach(input => {
-  input.addEventListener('change', updateDownloadButton);
+  input.addEventListener('change', () => {
+    if (input.value === 'session' && input.checked && !sessionConnected) {
+      if (sessionAdvancedDetails) sessionAdvancedDetails.open = true;
+      sessionInput?.focus();
+      notify('Для скачивания с аккаунтом добавьте cookie osu_session в блоке ниже.');
+    }
+    updateDownloadButton();
+  });
 });
 
 function renderSessionState(connected) {
   sessionConnected = connected;
-  byId('session-dot').classList.toggle('connected', connected);
-  byId('session-text').textContent = connected ? 'Сессия сохранена (до 6 ч или до перезапуска)' : 'Сессия не добавлена';
-  byId('session-clear').hidden = !connected;
-  sessionInput.required = !connected;
-  sessionInput.placeholder = connected ? 'Сессия сохранена в памяти приложения' : 'Вставьте значение cookie osu_session';
+  byId('session-dot')?.classList.toggle('connected', connected);
+  const textEl = byId('session-text');
+  if (textEl) {
+    textEl.textContent = connected ? 'Сессия сохранена в памяти (до 6 ч или до перезапуска)' : 'Сессия не добавлена';
+  }
+  const clearBtn = byId('session-clear');
+  if (clearBtn) clearBtn.hidden = !connected;
+  if (sessionInput) {
+    sessionInput.placeholder = connected ? 'Сессия активна в памяти (вставьте новую для замены)' : 'Вставьте значение cookie osu_session';
+  }
+  if (sessionRiskConfirm) {
+    sessionRiskConfirm.checked = false;
+  }
+  updateSessionSaveButton();
   updateDownloadButton();
 }
 
@@ -773,26 +804,37 @@ postActionInputs.forEach(input => {
 
 sessionForm?.addEventListener('submit', async event => {
   event.preventDefault();
-  const session = sessionInput ? sessionInput.value.trim() : '';
+  let session = sessionInput ? sessionInput.value.trim() : '';
+  if (session.toLowerCase().startsWith('osu_session=')) {
+    session = session.slice('osu_session='.length).trim();
+  }
   if (!session) return;
-  const button = byId('session-save');
+  if (!sessionRiskConfirm?.checked) {
+    notify('Подтвердите понимание рисков безопасности перед сохранением.');
+    return;
+  }
+  if (session.length < 20 || session.length > 1024 || !/^[a-zA-Z0-9%_\-\.=/+|]+$/.test(session)) {
+    notify('Некорректный формат cookie. Ожидается токен сессии osu.ppy.sh (без пробелов и спецсимволов).');
+    return;
+  }
+  const button = /** @type {HTMLButtonElement | null} */ (byId('session-save'));
   if (button) button.disabled = true;
   try {
     await api('/api/session', { method: 'POST', body: JSON.stringify({ session }) });
     if (sessionInput) sessionInput.value = '';
     renderSessionState(true);
-    notify('Сессия сохранена только в памяти приложения.');
+    notify('Сессия сохранена в оперативной памяти (до 6 часов либо до перезапуска).');
   } catch (rawError) {
     notify(toAny(rawError).message);
   } finally {
-    if (button) button.disabled = false;
+    updateSessionSaveButton();
   }
 });
 byId('session-clear')?.addEventListener('click', async () => {
   try {
     await api('/api/session', { method: 'DELETE' });
     renderSessionState(false);
-    notify('Сессия удалена.');
+    notify('Сессия удалена из памяти приложения.');
   } catch (rawError) {
     notify(toAny(rawError).message);
   }

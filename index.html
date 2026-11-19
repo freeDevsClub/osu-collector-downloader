@@ -261,6 +261,32 @@
       .notice p {
         margin: 4px 0 0;
       }
+      .session-panel {
+        padding: 12px 14px 14px;
+      }
+      .session-risk-notice {
+        border-color: #733c2a;
+        background: #2a1a16;
+        color: #f1cfc8;
+        margin-top: 0;
+        margin-bottom: 14px;
+      }
+      .session-risk-notice strong {
+        color: #ff9d89;
+      }
+      .session-confirm-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+        font-size: 12px;
+        color: #c0bccb;
+        cursor: pointer;
+        user-select: none;
+      }
+      .session-confirm-label input {
+        cursor: pointer;
+      }
       .collection {
         display: none;
       }
@@ -964,52 +990,7 @@
           </section>
 
           <section class="card">
-            <h2>3. Cookie osu_session — резервный способ</h2>
-            <p class="hint">
-              Нужна, только если зеркала не отдают нужный набор
-            </p>
-            <form id="session-form">
-              <label for="session-cookie"
-                >Cookie <code>osu_session</code></label
-              >
-              <div class="field-row">
-                <input
-                  id="session-cookie"
-                  name="session"
-                  type="password"
-                  placeholder="Вставьте значение cookie osu_session"
-                  autocomplete="off"
-                  spellcheck="false"
-                  required
-                />
-                <button id="session-save" type="submit">Сохранить</button>
-              </div>
-              <p class="small">
-                Хранится только в оперативной памяти (до 6 часов либо до
-                перезапуска сервера).
-              </p>
-            </form>
-            <div class="session-state">
-              <div class="session-label">
-                <span id="session-dot" class="session-dot"></span
-                ><span id="session-text">Сессия не добавлена</span>
-              </div>
-              <button id="session-clear" class="secondary" type="button" hidden>
-                Удалить
-              </button>
-            </div>
-            <div class="notice">
-              <strong>Не передавайте cookie никому</strong>
-              <p>
-                Она даёт доступ к аккаунту. Пароль вводить в это приложение не
-                нужно. Cookie отправляется только на osu.ppy.sh, а не на зеркало
-                загрузок.
-              </p>
-            </div>
-          </section>
-
-          <section class="card">
-            <h2>4. Скачивание</h2>
+            <h2>3. Скачивание</h2>
             <p class="hint">
               Файлы берутся с зеркал osu! — без cookie и без входа в аккаунт
             </p>
@@ -1026,7 +1007,7 @@
                   id="method-mirror"
                   checked
                 /><span
-                  >Зеркала<small>osu.direct, Hinamizawa, osu!dl</small></span
+                  >Зеркала (рекомендуется)<small>osu.direct, Hinamizawa, osu!dl</small></span
                 ></label
               >
               <label class="method-option" id="option-session"
@@ -1036,7 +1017,7 @@
                   value="session"
                   id="method-session"
                 /><span
-                  >Cookie osu_session<small>резервный способ</small></span
+                  >Cookie osu_session<small>резервный способ с аккаунтом</small></span
                 ></label
               >
             </div>
@@ -1047,6 +1028,51 @@
                 class="mirror-status"
               ></div>
             </div>
+
+            <details id="session-advanced-details" class="extra-methods-details">
+              <summary class="extra-methods-summary">
+                <span>Резервная авторизация: Cookie osu_session (расширенные настройки)</span>
+                <span class="chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="session-panel">
+                <div class="notice session-risk-notice">
+                  <strong>⚠️ Внимание: Полный доступ к аккаунту</strong>
+                  <p>
+                    Cookie <code>osu_session</code> даёт полный веб-доступ к вашему аккаунту на osu.ppy.sh.
+                    Используйте этот способ <em>только</em> если нужные карты недоступны ни на одном зеркале.
+                    Сервер хранит cookie только в оперативной памяти (до 6 часов либо до перезапуска) и маскирует её в логах.
+                  </p>
+                </div>
+                <form id="session-form">
+                  <label for="session-cookie">Значение cookie <code>osu_session</code></label>
+                  <div class="field-row">
+                    <input
+                      id="session-cookie"
+                      name="session"
+                      type="password"
+                      placeholder="Вставьте значение cookie osu_session"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                    <button id="session-save" type="submit" disabled>Сохранить</button>
+                  </div>
+                  <label class="session-confirm-label" for="session-risk-confirm">
+                    <input type="checkbox" id="session-risk-confirm" />
+                    <span>Я понимаю риски и подтверждаю передачу сессии аккаунта osu!</span>
+                  </label>
+                </form>
+                <div class="session-state">
+                  <div class="session-label">
+                    <span id="session-dot" class="session-dot"></span>
+                    <span id="session-text">Сессия не добавлена</span>
+                  </div>
+                  <button id="session-clear" class="secondary" type="button" hidden>
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            </details>
+
             <div class="download-options">
               <label class="checkbox-option" id="label-novideo">
                 <input type="checkbox" id="checkbox-novideo" />
