@@ -121,17 +121,54 @@ const {
 } = osu;
 
 /**
+ * Корректно закрывает входящий поток и лежащий под ним сокет
+ * после завершения ответа клиенту (или немедленно, если это изолированный поток).
+ * @param {import('node:http').IncomingMessage | any} req
+ */
+function closeStreamOrSocket(req) {
+  if (!req) return;
+  const res = req.res || req.socket?._httpMessage;
+  if (res) {
+    // В HTTP с Connection: close Node.js закрывает сокет при завершении res.end().
+    // Страховочный таймер обеспечивает принудительный разрыв сокета, если клиент завис или флудит.
+    const timer = setTimeout(() => {
+      if (!req.destroyed && typeof req.destroy === 'function') req.destroy();
+      const sock = req.socket || res.socket;
+      if (sock && !sock.destroyed && typeof sock.destroy === 'function') sock.destroy();
+    }, 1000);
+    timer.unref();
+  } else if (!req.destroyed && typeof req.destroy === 'function') {
+    req.destroy();
+  }
+}
+
+/**
  * Читает тело HTTP-запроса с лимитом размера и парсит его как JSON.
- * @param {import('node:http').IncomingMessage} req
+ * При превышении лимита размера немедленно прекращает чтение (drains / closes stream)
+ * и уничтожает поток запроса после отправки ответа 413.
+ * @param {import('node:http').IncomingMessage | any} req
+ * @param {{ maxBody?: number }} [options]
  * @returns {Promise<any>}
  */
-async function readJson(req) {
+async function readJson(req, { maxBody = MAX_BODY } = {}) {
+  const contentLength = Number(req.headers?.['content-length']);
+  if (Number.isFinite(contentLength) && contentLength > maxBody) {
+    if (typeof req.resume === 'function') req.resume();
+    closeStreamOrSocket(req);
+    throw new HttpError(413, 'Слишком большой запрос.');
+  }
+
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
-    size += chunk.length;
-    if (size > MAX_BODY) throw new HttpError(413, 'Слишком большой запрос.');
-    chunks.push(chunk);
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buf.length;
+    if (size > maxBody) {
+      if (typeof req.resume === 'function') req.resume();
+      closeStreamOrSocket(req);
+      throw new HttpError(413, 'Слишком большой запрос.');
+    }
+    chunks.push(buf);
   }
   let parsed;
   try {
@@ -274,7 +311,10 @@ async function handleApi(req, res, url) {
     }
     let initialPath = '';
     if (req.method === 'POST') {
-      const body = await readJson(req).catch(() => ({}));
+      const body = await readJson(req).catch(err => {
+        if (err instanceof HttpError && err.status === 413) throw err;
+        return {};
+      });
       initialPath = typeof body?.initialPath === 'string' ? body.initialPath : '';
     } else {
       initialPath = url.searchParams.get('initialPath') || '';
@@ -534,7 +574,10 @@ async function handleApi(req, res, url) {
       return json(res, 409, { error: 'Продолжить можно только приостановленную загрузку.' });
     }
 
-    const body = await readJson(req).catch(() => ({}));
+    const body = await readJson(req).catch(err => {
+      if (err instanceof HttpError && err.status === 413) throw err;
+      return {};
+    });
     const requestedMethod = url.searchParams.get('method') || (typeof body?.method === 'string' ? body.method : null);
     const method = requestedMethod && ['mirror', 'session'].includes(requestedMethod)
       ? requestedMethod
@@ -738,6 +781,7 @@ async function handleApi(req, res, url) {
 }
 
 const server = http.createServer(async (req, res) => {
+  /** @type {any} */ (req).res = res;
   const requestStartedAt = Date.now();
   res.on('finish', () => {
     const requestUrl = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
@@ -803,7 +847,12 @@ const server = http.createServer(async (req, res) => {
       : (typeof err?.httpStatus === 'number' && err.httpStatus >= 400 && err.httpStatus <= 599)
         ? err.httpStatus
         : 500;
-    json(res, status, { error: safeErrorMessage(error) || 'Внутренняя ошибка.' });
+    const isPayloadTooLarge = status === 413;
+    const extraHeaders = isPayloadTooLarge ? { 'Connection': 'close' } : {};
+    json(res, status, { error: safeErrorMessage(error) || 'Внутренняя ошибка.' }, extraHeaders);
+    if (isPayloadTooLarge) {
+      closeStreamOrSocket(req);
+    }
   }
 });
 
@@ -982,4 +1031,6 @@ module.exports = {
   startServer,
   waitForPendingSaveState,
   handleMethodNotAllowed,
+  readJson,
+  closeStreamOrSocket,
 };
