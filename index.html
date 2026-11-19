@@ -283,10 +283,16 @@
               </button>
             </div>
             <div id="progress-wrap" class="progress-wrap">
-              <div class="progress-head">
-                <span id="progress-label">Подготовка…</span
-                ><span id="progress-percent">0%</span>
-              </div>
+              <details id="transfers-details" class="transfers-dropdown">
+                <summary class="transfers-summary">
+                  <div class="transfers-title-wrap">
+                    <span id="progress-label">Подготовка…</span>
+                    <span id="transfers-chevron" class="transfers-chevron" aria-hidden="true">▾</span>
+                  </div>
+                  <span id="progress-percent">0%</span>
+                </summary>
+                <div id="transfers-list" class="transfers-list"></div>
+              </details>
               <div
                 id="progress-track"
                 class="progress-track"
@@ -297,21 +303,6 @@
                 aria-valuenow="0"
               >
                 <div id="progress-bar" class="progress-bar"></div>
-              </div>
-              <div class="transfer-details">
-                <span id="transfer-label">Прогресс текущего набора</span
-                ><span id="transfer-bytes">0 Б</span>
-              </div>
-              <div
-                id="transfer-track"
-                class="transfer-track"
-                role="progressbar"
-                aria-label="Загрузка текущего набора"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow="0"
-              >
-                <div id="transfer-bar" class="transfer-bar"></div>
               </div>
               <div class="stats">
                 <div class="stat">

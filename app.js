@@ -62,6 +62,9 @@ const progressBar = byId('progress-bar');
 const progressLabel = byId('progress-label');
 const progressPercent = byId('progress-percent');
 const progressTrack = byId('progress-track');
+const transfersDetails = /** @type {HTMLDetailsElement | null} */ (byId('transfers-details'));
+const transfersList = byId('transfers-list');
+const transfersChevron = byId('transfers-chevron');
 const transferBar = byId('transfer-bar');
 const transferTrack = byId('transfer-track');
 const sessionInput = byId('session-cookie');
@@ -1046,13 +1049,105 @@ function updateJob(job) {
   const total = job.total || 0;
   const percent = total ? Math.round(job.completed / total * 100) : 0;
   const currentPercent = Number.isFinite(job.currentPercent) ? job.currentPercent : null;
-  if (progressBar) progressBar.style.setProperty('--progress', `${percent}%`);
-  if (progressPercent) progressPercent.textContent = `${percent}%`;
-  if (progressTrack) progressTrack.setAttribute('aria-valuenow', String(percent));
-  if (progressLabel) {
-    progressLabel.textContent = job.currentSetName
-      ? `${job.currentSetName} · ${job.completed} из ${total}`
-      : job.currentSetId ? `Набор ${job.currentSetId} · ${job.completed} из ${total}` : `${job.completed} из ${total}`;
+  const progressBarEl = byId('progress-bar') || progressBar;
+  const progressPercentEl = byId('progress-percent') || progressPercent;
+  const progressTrackEl = byId('progress-track') || progressTrack;
+  const progressLabelEl = byId('progress-label') || progressLabel;
+
+  if (progressBarEl) progressBarEl.style.setProperty('--progress', `${percent}%`);
+  if (progressPercentEl) progressPercentEl.textContent = `${percent}%`;
+  if (progressTrackEl) progressTrackEl.setAttribute('aria-valuenow', String(percent));
+  if (progressLabelEl) {
+    let statusPrefix = 'Загрузка…';
+    if (job.status === 'queued') statusPrefix = 'Подготовка…';
+    else if (job.status === 'paused') statusPrefix = 'Пауза ·';
+    else if (job.status === 'finished') statusPrefix = 'Завершено ·';
+    else if (job.status === 'finished_with_errors') statusPrefix = 'Завершено с ошибками ·';
+    else if (job.status === 'cancelled') statusPrefix = 'Остановлено ·';
+
+    progressLabelEl.textContent = total > 0 ? `${statusPrefix} ${job.completed} из ${total}` : statusPrefix;
+  }
+
+  // Обновление выпадающего списка активных параллельных загрузок
+  const transfersListEl = byId('transfers-list');
+  const transfersChevronEl = byId('transfers-chevron');
+  const transfersDetailsEl = /** @type {HTMLDetailsElement | null} */ (byId('transfers-details'));
+
+  /** @type {Array<{ setId?: number, setName?: string, mirror?: string, bytes?: number, totalBytes?: number | null, percent?: number | null }>} */
+  const activeTransfers = Array.isArray(job.activeTransfers) && job.activeTransfers.length > 0
+    ? job.activeTransfers
+    : ((job.currentSetId || job.currentSetName) && ['running', 'queued'].includes(job.status))
+      ? [{
+          setId: job.currentSetId,
+          setName: job.currentSetName || `Набор ${job.currentSetId}`,
+          mirror: job.currentMirror || '',
+          bytes: job.currentBytes || 0,
+          totalBytes: job.currentTotalBytes,
+          percent: currentPercent,
+        }]
+      : [];
+
+  if (transfersChevronEl) {
+    transfersChevronEl.hidden = activeTransfers.length === 0 && !['running', 'queued'].includes(job.status);
+  }
+
+  if (transfersListEl && transfersDetailsEl) {
+    if (activeTransfers.length === 0) {
+      if (transfersDetailsEl.open) {
+        transfersListEl.innerHTML = '<div class="transfer-empty">Нет активных загрузок в данный момент</div>';
+      } else {
+        transfersListEl.replaceChildren();
+      }
+    } else {
+      transfersListEl.replaceChildren();
+      for (const t of activeTransfers) {
+        const item = document.createElement('div');
+        item.className = 'transfer-item';
+
+        const head = document.createElement('div');
+        head.className = 'transfer-item-head';
+
+        const title = document.createElement('span');
+        title.className = 'transfer-item-title';
+        title.textContent = t.setName || (t.setId ? `Набор ${t.setId}` : 'Без названия');
+        title.title = title.textContent;
+        head.appendChild(title);
+
+        if (t.mirror) {
+          const mirror = document.createElement('span');
+          mirror.className = 'transfer-item-mirror';
+          mirror.textContent = t.mirror;
+          head.appendChild(mirror);
+        }
+        item.appendChild(head);
+
+        const meta = document.createElement('div');
+        meta.className = 'transfer-item-meta';
+
+        const bytesSpan = document.createElement('span');
+        bytesSpan.textContent = t.totalBytes
+          ? `${formatBytes(t.bytes || 0)} / ${formatBytes(t.totalBytes)}`
+          : `${formatBytes(t.bytes || 0)} загружено`;
+        meta.appendChild(bytesSpan);
+
+        if (t.percent !== null && t.percent !== undefined) {
+          const percentSpan = document.createElement('span');
+          percentSpan.textContent = `${t.percent}%`;
+          meta.appendChild(percentSpan);
+        }
+        item.appendChild(meta);
+
+        const track = document.createElement('div');
+        track.className = 'transfer-item-track';
+        const bar = document.createElement('div');
+        bar.className = 'transfer-item-bar';
+        bar.style.setProperty('--progress', `${t.percent ?? 0}%`);
+        track.appendChild(bar);
+        item.appendChild(track);
+
+        transfersListEl.appendChild(item);
+      }
+    }
   }
   if (transferBar) transferBar.style.setProperty('--progress', `${currentPercent ?? 0}%`);
   if (transferTrack) transferTrack.setAttribute('aria-valuenow', String(currentPercent ?? 0));

@@ -597,28 +597,112 @@
         background: #ffcf8a;
         box-shadow: 0 0 10px #ffcf8a66;
       }
-      .transfer-details {
+      .transfers-dropdown {
+        margin-bottom: 8px;
+        border-radius: 9px;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .transfers-dropdown[open] {
+        background: #14141c;
+        border: 1px solid var(--line);
+        padding: 6px 10px 10px;
+      }
+      .transfers-summary {
         display: flex;
+        align-items: center;
         justify-content: space-between;
         gap: 10px;
+        color: #e6e2ec;
+        font-size: 13px;
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+        padding: 3px 0;
+      }
+      .transfers-summary::-webkit-details-marker {
+        display: none;
+      }
+      .transfers-summary:hover .transfers-title-wrap {
+        color: var(--pink);
+      }
+      .transfers-title-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 500;
+        transition: color 0.15s;
+      }
+      .transfers-chevron {
+        font-size: 10px;
         color: var(--muted);
+        transition: transform 0.2s ease, opacity 0.15s;
+      }
+      .transfers-dropdown[open] .transfers-chevron {
+        transform: rotate(180deg);
+      }
+      .transfers-list {
+        margin-top: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .transfer-item {
+        background: rgba(0, 0, 0, 0.28);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 7px;
+        padding: 7px 9px;
+      }
+      .transfer-item-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
         font-size: 12px;
-        margin-top: 8px;
       }
-      .transfer-track {
-        height: 13px;
-        border-radius: 99px;
+      .transfer-item-title {
+        font-weight: 500;
+        color: var(--text);
+        white-space: nowrap;
         overflow: hidden;
-        background: #101015;
-        border: 1px solid #3a3946;
-        margin-top: 7px;
+        text-overflow: ellipsis;
+        flex: 1;
       }
-      .transfer-bar {
+      .transfer-item-mirror {
+        font-size: 11px;
+        color: var(--pink);
+        background: rgba(220, 75, 138, 0.12);
+        padding: 2px 6px;
+        border-radius: 5px;
+        flex-shrink: 0;
+      }
+      .transfer-item-meta {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 4px;
+      }
+      .transfer-item-track {
+        height: 4px;
+        border-radius: 99px;
+        background: #101015;
+        overflow: hidden;
+        margin-top: 4px;
+      }
+      .transfer-item-bar {
         height: 100%;
         width: var(--progress, 0%);
         background: linear-gradient(90deg, #dc4b8a, #ff91bb);
-        transition: width 0.25s;
         border-radius: inherit;
+        transition: width 0.25s;
+      }
+      .transfer-empty {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+        padding: 6px 0;
       }
       .action-row {
         display: flex;
@@ -634,14 +718,6 @@
       }
       .progress-wrap.visible {
         display: block;
-      }
-      .progress-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        color: #e6e2ec;
-        font-size: 13px;
-        margin-bottom: 8px;
       }
       .progress-track {
         height: 9px;
