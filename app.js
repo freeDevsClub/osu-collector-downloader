@@ -184,7 +184,7 @@ function methodReady(method) {
 function updateDownloadButton() {
   const method = selectedMethod();
   const ready = Boolean(collection && collection.count) && methodReady(method) && !activeJob;
-  downloadButton.disabled = !ready;
+  if (downloadButton) downloadButton.disabled = !ready;
   if (checkboxNoVideo) {
     checkboxNoVideo.disabled = Boolean(activeJob);
   }
@@ -914,8 +914,8 @@ function startJobPolling(id) {
   pausedJob = null;
   pollFailures = 0;
   persistJobId(id);
-  cancelButton.hidden = false;
-  resumeButton.hidden = true;
+  if (cancelButton) cancelButton.hidden = false;
+  if (resumeButton) resumeButton.hidden = true;
   if (retryFailedButton) retryFailedButton.hidden = true;
   progressWrap.classList.add('visible');
 
@@ -1280,13 +1280,13 @@ function finishJob(job, errorMessage = '') {
   const canResume = (job?.status === 'paused' || (job?.status === 'finished_with_errors' && (job.deferred || 0) > 0)) && !errorMessage && !Number.isFinite(job.autoResumeAt);
   if (canResume) {
     pausedJob = job.id;
-    resumeButton.hidden = false;
-    cancelButton.hidden = false;
+    if (resumeButton) resumeButton.hidden = false;
+    if (cancelButton) cancelButton.hidden = false;
     persistJobId(job.id);
   } else {
     pausedJob = null;
-    resumeButton.hidden = true;
-    cancelButton.hidden = true;
+    if (resumeButton) resumeButton.hidden = true;
+    if (cancelButton) cancelButton.hidden = true;
     persistJobId(null);
   }
   const canRetry = Boolean(job && (job.canRetryFailed ?? (job.failed > 0)) && !['queued', 'running'].includes(job.status));
@@ -1307,8 +1307,19 @@ function finishJob(job, errorMessage = '') {
   else if (job?.status === 'finished_with_errors') setStatus(downloadStatus, `${job.message} Успешные загрузки лежат в папке downloads.`, 'error');
   else if (job?.status === 'cancelled') setStatus(downloadStatus, 'Загрузка остановлена. Уже скачанные файлы сохранены.');
   updateDownloadButton();
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
+  const activeEl = document.activeElement;
+  if (
+    typeof HTMLElement !== 'undefined' &&
+    activeEl instanceof HTMLElement &&
+    activeEl !== document.body &&
+    activeEl !== document.documentElement
+  ) {
+    activeEl.blur();
+  }
+  if (typeof window !== 'undefined' && typeof window.focus === 'function') {
+    try {
+      window.focus();
+    } catch {}
   }
 }
 
@@ -1500,5 +1511,6 @@ if (typeof module !== 'undefined' && module.exports) {
     setCollection,
     getCollection,
     updateJob,
+    finishJob,
   };
 }

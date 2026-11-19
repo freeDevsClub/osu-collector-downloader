@@ -98,7 +98,7 @@ describe('Оптимизация updateMapBadge: переход с O(N²) на O
 });
 
 describe('Оптимизация updateJob и DOM-реконсиляция ошибок/зеркал', () => {
-  it('style.css содержит CSS-свойства content-visibility: auto и contain-intrinsic-size для .map-id', async () => {
+  it('style.css не содержит CSS-свойства content-visibility: auto и contain-intrinsic-size, исключая layout thrashing при скролле', async () => {
     const fs = require('node:fs/promises');
     const path = require('node:path');
     let content = '';
@@ -108,10 +108,8 @@ describe('Оптимизация updateJob и DOM-реконсиляция ош�
       content = await fs.readFile(path.join(__dirname, '..', 'index.html'), 'utf-8');
     }
 
-    assert.match(content, /\.map-id\s*\{[^}]*content-visibility:\s*auto;/);
-    assert.match(content, /\.map-id\s*\{[^}]*contain-intrinsic-size:\s*0 42px;/);
-    assert.match(content, /\.map-id\.map-item\s*\{[^}]*content-visibility:\s*auto;/);
-    assert.match(content, /\.map-id\.map-item\s*\{[^}]*contain-intrinsic-size:\s*0 42px;/);
+    assert.doesNotMatch(content, /content-visibility:\s*auto;/);
+    assert.doesNotMatch(content, /contain-intrinsic-size/);
   });
 
   it('updateJob не пересоздаёт DOM-узлы в #failed-list, если сигнатура ошибок не изменилась или при byteTick', () => {

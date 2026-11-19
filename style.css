@@ -380,7 +380,6 @@
         max-height: 340px;
         overflow-y: auto;
         overflow-x: hidden;
-        overscroll-behavior-y: contain;
         scrollbar-width: thin;
         scrollbar-color: #4a4855 transparent;
       }
@@ -402,8 +401,6 @@
         background: transparent;
       }
       .map-id {
-        content-visibility: auto;
-        contain-intrinsic-size: 0 42px;
         display: flex;
         flex-direction: column;
         gap: 2px;
@@ -415,10 +412,6 @@
         font-size: 12px;
         min-width: 0;
         transition: opacity 0.2s ease, border-color 0.2s ease;
-      }
-      .map-id.map-item {
-        content-visibility: auto;
-        contain-intrinsic-size: 0 42px;
       }
       .map-id.is-pending {
         opacity: 0.55;
@@ -766,7 +759,6 @@
         margin-top: 10px;
         max-height: 200px;
         overflow-y: auto;
-        overscroll-behavior-y: contain;
         display: flex;
         flex-direction: column;
         gap: 8px;
