@@ -43,6 +43,17 @@ const {
   activeRedactions,
   safeErrorMessage,
   parseCookies,
+  localApiTokenCookie,
+  getApiToken,
+  setApiToken,
+  resetApiToken,
+  isApiTokenRequired,
+  setApiTokenRequired,
+  isInitialCookieGranted,
+  setInitialCookieGranted,
+  safeCompareTokens,
+  extractTokenFromRequest,
+  verifyApiToken,
   ensureLocalRequest,
   isPrivateIPv4,
   isPrivateIPv6,
@@ -800,8 +811,8 @@ const server = http.createServer(async (req, res) => {
     });
   });
 
-  if (!ensureLocalRequest(req, res)) return;
   const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
+  if (!ensureLocalRequest(req, res, { url })) return;
 
   if (bootstrapPromise) {
     try {
@@ -829,6 +840,22 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' });
         return res.end('Method not allowed');
       }
+
+      if (url.pathname === '/' || url.pathname === '/index.html') {
+        if (url.searchParams.has('token')) {
+          const providedToken = url.searchParams.get('token') || '';
+          if (safeCompareTokens(providedToken, getApiToken())) {
+            res.writeHead(302, {
+              'Location': '/',
+              'Set-Cookie': `${localApiTokenCookie}=${getApiToken()}; ${cookieOptions(req, 60 * 60 * 24)}`,
+              'Cache-Control': 'no-store',
+            });
+            return res.end();
+          }
+          return json(res, 403, { error: 'Недействительный токен авторизации.' });
+        }
+      }
+
       const asset = url.pathname === '/app.js'
         ? 'app.js'
         : url.pathname === '/style.css'
@@ -840,6 +867,16 @@ const server = http.createServer(async (req, res) => {
         : asset.endsWith('.css')
           ? 'text/css; charset=utf-8'
           : 'text/html; charset=utf-8';
+
+      const cookies = parseCookies(req.headers.cookie);
+      const hasValidTokenCookie = safeCompareTokens(cookies[localApiTokenCookie], getApiToken());
+      /** @type {Record<string, string>} */
+      const extraHeaders = {};
+      if ((url.pathname === '/' || url.pathname === '/index.html') && !hasValidTokenCookie && !isInitialCookieGranted()) {
+        setInitialCookieGranted(true);
+        extraHeaders['Set-Cookie'] = `${localApiTokenCookie}=${getApiToken()}; ${cookieOptions(req, 60 * 60 * 24)}`;
+      }
+
       res.writeHead(200, {
         'Content-Type': contentType,
         'Cache-Control': 'no-store',
@@ -847,6 +884,7 @@ const server = http.createServer(async (req, res) => {
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'Referrer-Policy': 'no-referrer',
+        ...extraHeaders,
       });
       return res.end(content);
     }
@@ -911,9 +949,12 @@ function bootstrapAfterListen() {
  * Выполняет инициализацию хранилища с диска и запускает прослушивание входящих HTTP-подключений.
  * @param {number} [port]
  * @param {string} [host]
+ * @param {{ requireToken?: boolean }} [options]
  * @returns {Promise<import('node:http').Server>}
  */
-async function startServer(port = PORT, host = HOST) {
+async function startServer(port = PORT, host = HOST, options = {}) {
+  const requireToken = options.requireToken ?? true;
+  setApiTokenRequired(requireToken);
   await bootstrapServer();
   return new Promise((resolve, reject) => {
     const onError = (/** @type {any} */ error) => {
@@ -924,7 +965,7 @@ async function startServer(port = PORT, host = HOST) {
     server.listen(port, host, () => {
       server.off('error', onError);
       log('info', 'server.started', {
-        url: `http://${host}:${port}`,
+        url: `http://${host}:${port}/?token=${getApiToken()}`,
         node: process.version,
         downloadsDirectory: getDownloadsDir(),
         downloadMirrors: MIRRORS.map(mirror => mirror.id),
@@ -1047,4 +1088,15 @@ module.exports = {
   handleMethodNotAllowed,
   readJson,
   closeStreamOrSocket,
+  localApiTokenCookie,
+  getApiToken,
+  setApiToken,
+  resetApiToken,
+  isApiTokenRequired,
+  setApiTokenRequired,
+  isInitialCookieGranted,
+  setInitialCookieGranted,
+  safeCompareTokens,
+  extractTokenFromRequest,
+  verifyApiToken,
 };
