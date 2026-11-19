@@ -824,17 +824,26 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
 
-    if (['/', '/index.html', '/app.js'].includes(url.pathname)) {
+    if (['/', '/index.html', '/app.js', '/style.css'].includes(url.pathname)) {
       if (!['GET', 'HEAD'].includes(req.method)) {
         res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' });
         return res.end('Method not allowed');
       }
-      const asset = url.pathname === '/app.js' ? 'app.js' : 'index.html';
+      const asset = url.pathname === '/app.js'
+        ? 'app.js'
+        : url.pathname === '/style.css'
+          ? 'style.css'
+          : 'index.html';
       const content = await fs.promises.readFile(path.join(ROOT, asset));
+      const contentType = asset.endsWith('.js')
+        ? 'text/javascript; charset=utf-8'
+        : asset.endsWith('.css')
+          ? 'text/css; charset=utf-8'
+          : 'text/html; charset=utf-8';
       res.writeHead(200, {
-        'Content-Type': asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8',
+        'Content-Type': contentType,
         'Cache-Control': 'no-store',
-        'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+        'Content-Security-Policy': "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'Referrer-Policy': 'no-referrer',

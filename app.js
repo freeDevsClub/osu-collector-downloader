@@ -1043,7 +1043,7 @@ function updateJob(job) {
   const total = job.total || 0;
   const percent = total ? Math.round(job.completed / total * 100) : 0;
   const currentPercent = Number.isFinite(job.currentPercent) ? job.currentPercent : null;
-  if (progressBar) progressBar.style.width = `${percent}%`;
+  if (progressBar) progressBar.style.setProperty('--progress', `${percent}%`);
   if (progressPercent) progressPercent.textContent = `${percent}%`;
   if (progressTrack) progressTrack.setAttribute('aria-valuenow', String(percent));
   if (progressLabel) {
@@ -1051,7 +1051,7 @@ function updateJob(job) {
       ? `${job.currentSetName} · ${job.completed} из ${total}`
       : job.currentSetId ? `Набор ${job.currentSetId} · ${job.completed} из ${total}` : `${job.completed} из ${total}`;
   }
-  if (transferBar) transferBar.style.width = `${currentPercent ?? 0}%`;
+  if (transferBar) transferBar.style.setProperty('--progress', `${currentPercent ?? 0}%`);
   if (transferTrack) transferTrack.setAttribute('aria-valuenow', String(currentPercent ?? 0));
   const transferBytesEl = byId('transfer-bytes');
   if (transferBytesEl) {

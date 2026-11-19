@@ -201,6 +201,17 @@ describe('Безопасность сессий и cookie osu_session (/api/sess
 
       // 5. Предупреждение о полном доступе к аккаунту
       assert.match(html, /Полный доступ к аккаунту/);
+
+      // 6. Стили вынесены в отдельный файл style.css, инлайн-стили отсутствуют
+      assert.match(html, /<link rel="stylesheet" href="\/style\.css" \/>/);
+      assert.doesNotMatch(html, /<style/i);
+      assert.doesNotMatch(html, /\bstyle=/i);
+
+      // 7. Проверка стилей чекбокса в style.css
+      const cssPath = path.join(ROOT, 'style.css');
+      const css = await fs.promises.readFile(cssPath, 'utf8');
+      assert.match(css, /\.session-confirm-label\s*input\s*\{[^}]*width:\s*16px;/);
+      assert.match(css, /\.session-confirm-label\s*input\s*\{[^}]*height:\s*16px;/);
     });
   });
 });

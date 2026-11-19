@@ -146,6 +146,24 @@ describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn
     assert.equal(resAppPost.status, 405);
     assert.equal(resAppPost.headers['allow'], 'GET, HEAD');
 
+    // POST на /style.css -> 405
+    const resStylePost = await request('POST', '/style.css');
+    assert.equal(resStylePost.status, 405);
+    assert.equal(resStylePost.headers['allow'], 'GET, HEAD');
+
+    // GET на /style.css -> 200 text/css и строгий CSP без unsafe-inline
+    const resStyleGet = await request('GET', '/style.css');
+    assert.equal(resStyleGet.status, 200);
+    assert.match(resStyleGet.headers['content-type'], /^text\/css/);
+    assert.match(resStyleGet.headers['content-security-policy'], /style-src 'self'/);
+    assert.doesNotMatch(resStyleGet.headers['content-security-policy'], /unsafe-inline/);
+
+    // GET на /index.html -> строгий CSP без unsafe-inline
+    const resIndexGet = await request('GET', '/index.html');
+    assert.equal(resIndexGet.status, 200);
+    assert.match(resIndexGet.headers['content-security-policy'], /style-src 'self'/);
+    assert.doesNotMatch(resIndexGet.headers['content-security-policy'], /unsafe-inline/);
+
     // Неизвестный маршрут API -> 404
     const resUnknownApi = await request('GET', '/api/completely-unknown-route');
     assert.equal(resUnknownApi.status, 404);
