@@ -91,6 +91,7 @@ const {
   jobFilePath,
   cleanupJobPartFiles,
   cleanupStalePartFiles,
+  STALE_PART_MAX_AGE_MS,
   ensureDiskSpace,
   estimateRequiredDiskSpace,
   appendNoVideo,
@@ -500,13 +501,20 @@ async function handleApi(req, res, url) {
     }
 
     const currentActive = getActiveJob();
-    if (currentActive && ['queued', 'running'].includes(currentActive.status)) {
+    if (currentActive && ['preparing', 'queued', 'running'].includes(currentActive.status)) {
       return json(res, 409, { error: 'Уже идёт другая загрузка — дождитесь её или нажмите «Остановить».' });
     }
 
     const noVideoParam = url.searchParams.get('noVideo');
     const noVideo = noVideoParam === '1' || noVideoParam === 'true' || body?.noVideo === true || body?.noVideo === 1 || body?.noVideo === '1';
-    const collectionId = extractCollectionId(body?.url);
+    let collectionId;
+    try {
+      collectionId = extractCollectionId(body?.url);
+    } catch (extractError) {
+      if (extractError instanceof HttpError) return json(res, extractError.status, { error: extractError.message });
+      return json(res, 400, { error: safeErrorMessage(extractError) });
+    }
+
     if (currentActive && currentActive.status === 'paused') {
       if (currentActive.collectionId === collectionId) {
         return await resumePausedJobWithSettings(res, currentActive, auth, method, noVideo, 'manual');
@@ -514,16 +522,24 @@ async function handleApi(req, res, url) {
       return json(res, 409, { error: `Уже на паузе загрузка другой коллекции («${currentActive.collectionName}») — нажмите «Остановить», чтобы начать новую.` });
     }
 
-    const data = await fetchCollection(collectionId);
-    const setIds = parseSetIds(data);
-    if (!setIds.length) return json(res, 400, { error: 'В коллекции нет доступных наборов.' });
+    // Проверяем, есть ли уже данные коллекции в кеше памяти
+    const cached = collectionCache.get(collectionId);
+    let setIds = [];
+    let collectionName = typeof body?.name === 'string' && body.name.trim() ? body.name.trim() : `Коллекция ${collectionId}`;
+    let mapsById = new Map();
+    let isPrepared = false;
 
-    const activeCheck = getActiveJob();
-    if (activeCheck && ['queued', 'running', 'paused'].includes(activeCheck.status)) {
-      if (activeCheck.status === 'paused' && activeCheck.collectionId === collectionId) {
-        return await resumePausedJobWithSettings(res, activeCheck, auth, method, noVideo, 'manual');
+    if (cached?.data) {
+      const cachedSets = parseSetIds(cached.data);
+      if (cachedSets.length === 0) {
+        return json(res, 400, { error: 'В коллекции нет доступных наборов.' });
       }
-      return json(res, 409, { error: 'Уже идёт (или на паузе) другая загрузка — дождитесь её или нажмите «Остановить».' });
+      setIds = cachedSets;
+      if (typeof cached.data.name === 'string') collectionName = cached.data.name;
+      if (cached.data.mapsById) mapsById = cached.data.mapsById;
+      else if (cached.data.maps) mapsById = new Map(cached.data.maps.map(m => [m.id, m]));
+      else mapsById = new Map(fallbackMapInfo(setIds).map(m => [m.id, m]));
+      isPrepared = true;
     }
 
     const job = {
@@ -531,14 +547,14 @@ async function handleApi(req, res, url) {
       method,
       noVideo,
       collectionId,
-      collectionName: typeof data.name === 'string' ? data.name : `Коллекция ${collectionId}`,
+      collectionName,
       setIds,
       doneIds: new Set(),
       skipIds: new Set(),
       errIds: new Set(),
       errorsById: new Map(),
       extraFailures: 0,
-      mapsById: data.mapsById || new Map((data.maps || fallbackMapInfo(setIds)).map((/** @type {any} */ map) => [map.id, map])),
+      mapsById,
       currentBytes: 0,
       currentTotalBytes: null,
       currentPercent: 0,
@@ -546,28 +562,26 @@ async function handleApi(req, res, url) {
       autoResumeAt: null,
       autoResumeCount: 0,
       autoResumeTimer: null,
-      abortController: null,
+      abortController: new AbortController(),
       currentSetId: null,
-      status: 'queued',
-      message: 'Загрузка в очереди.',
+      status: 'preparing',
+      message: isPrepared ? 'Подготовка к загрузке…' : 'Получение списка карт из osu!Collector…',
       createdAt: Date.now(),
+      _prepared: isPrepared,
     };
     setActiveJob(job);
     jobs.set(job.id, job);
 
-    try {
-      const requiredBytes = await estimateRequiredDiskSpace(setIds, noVideo, { job });
-      if (requiredBytes > 0) {
-        await ensureDiskSpace(requiredBytes);
-      }
-    } catch (error) {
-      jobs.delete(job.id);
-      if (getActiveJob() === job) setActiveJob(null);
-      throw error;
-    }
+    log('info', 'download.job.created', {
+      jobId: job.id,
+      method,
+      noVideo,
+      mirrors: method === 'mirror' ? MIRRORS.map(mirror => mirror.id) : undefined,
+      collectionId,
+      collectionName: job.collectionName,
+      total: setIds.length,
+    });
 
-    log('info', 'download.job.created', { jobId: job.id, method, noVideo, mirrors: method === 'mirror' ? MIRRORS.map(mirror => mirror.id) : undefined, collectionId, collectionName: job.collectionName, total: setIds.length });
-    job._spaceChecked = true;
     launchJob(job, auth);
     void scheduleSaveState(true);
     return json(res, 202, safeJobForClient(job));
@@ -758,7 +772,7 @@ async function handleApi(req, res, url) {
     if (req.method !== 'POST') return handleMethodNotAllowed(req, res, ['POST']);
     const job = jobs.get(cancelMatch[1]);
     if (!job) return json(res, 404, { error: 'Загрузка не найдена.' });
-    if (['running', 'queued', 'paused', 'finished_with_errors'].includes(job.status)) {
+    if (['preparing', 'running', 'queued', 'paused', 'finished_with_errors'].includes(job.status)) {
       job.status = 'cancelled';
       clearAutoResume(job);
       job.abortController?.abort();
@@ -993,7 +1007,7 @@ if (require.main === module) {
       isShuttingDown = true;
       for (const token of sessions.keys()) sessions.delete(token);
       for (const job of jobs.values()) {
-        if (['queued', 'running'].includes(job.status)) {
+        if (['preparing', 'queued', 'running'].includes(job.status)) {
           job.status = 'paused';
           job.message = 'Сервер остановлен — задача приостановлена. Нажмите «Продолжить» при следующем запуске.';
           job.pausedAt = Date.now();
@@ -1003,7 +1017,8 @@ if (require.main === module) {
       }
       await waitForPendingSaveState().catch(() => {});
       await saveStateToDisk().catch(() => {});
-      await cleanupStalePartFiles().catch(() => {});
+      const activeIds = new Set(Array.from(jobs.keys()));
+      await cleanupStalePartFiles({ activeJobIds: activeIds }).catch(() => {});
       server.closeIdleConnections?.();
       server.close(() => process.exit(0));
       setTimeout(() => process.exit(0), 3000).unref();
@@ -1034,6 +1049,9 @@ module.exports = {
   downloadFromMirrors,
   downloadSet,
   safeDownloadFetch,
+  cleanupJobPartFiles,
+  cleanupStalePartFiles,
+  STALE_PART_MAX_AGE_MS,
   fetchMapsetInfo,
   fetchCollection,
   populateMetadataInBackground,

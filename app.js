@@ -867,12 +867,12 @@ downloadButton?.addEventListener('click', async () => {
     const job = await api(`/api/downloads?method=${method}${noVideo ? '&noVideo=1' : ''}`, {
       method: 'POST',
       body: JSON.stringify({ ...collectionPayload(), noVideo }),
-      // Создание задачи запрашивает коллекцию у osu!Collector — даём больше 20 секунд по умолчанию.
-      timeoutMs: 60000,
+      timeoutMs: 15000,
     });
     pausedJob = null;
     resumeButton.hidden = true;
     if (retryFailedButton) retryFailedButton.hidden = true;
+    cancelButton.hidden = false;
     startJobPolling(job.id);
     updateJob(job);
     void loadMirrors();
@@ -939,7 +939,7 @@ function startJobPolling(id) {
             cancelButton.hidden = false;
             return;
           }
-          if (!['queued', 'running'].includes(job.status)) {
+          if (!['preparing', 'queued', 'running'].includes(job.status)) {
             stopJobStream();
             finishJob(job);
           }
@@ -990,7 +990,7 @@ async function pollJob() {
       scheduleNextPoll();
       return;
     }
-    if (['queued', 'running'].includes(job.status)) {
+    if (['preparing', 'queued', 'running'].includes(job.status)) {
       scheduleNextPoll();
     } else {
       finishJob(job);
@@ -1039,7 +1039,7 @@ function updateJob(job) {
     }
   }
   if (retryFailedButton) {
-    const isRunning = ['queued', 'running'].includes(job.status);
+    const isRunning = ['preparing', 'queued', 'running'].includes(job.status);
     const canRetry = Boolean(!isRunning && (job.canRetryFailed ?? (job.failed > 0)));
     retryFailedButton.hidden = !canRetry;
     if (canRetry) {
@@ -1059,13 +1059,14 @@ function updateJob(job) {
   if (progressTrackEl) progressTrackEl.setAttribute('aria-valuenow', String(percent));
   if (progressLabelEl) {
     let statusPrefix = 'Загрузка…';
-    if (job.status === 'queued') statusPrefix = 'Подготовка…';
+    if (job.status === 'preparing') statusPrefix = 'Подготовка…';
+    else if (job.status === 'queued') statusPrefix = 'В очереди ·';
     else if (job.status === 'paused') statusPrefix = 'Пауза ·';
     else if (job.status === 'finished') statusPrefix = 'Завершено ·';
     else if (job.status === 'finished_with_errors') statusPrefix = 'Завершено с ошибками ·';
     else if (job.status === 'cancelled') statusPrefix = 'Остановлено ·';
 
-    progressLabelEl.textContent = total > 0 ? `${statusPrefix} ${job.completed} из ${total}` : statusPrefix;
+    progressLabelEl.textContent = total > 0 ? `${statusPrefix} ${job.completed} из ${total}` : (job.message || statusPrefix);
   }
 
   // Обновление выпадающего списка активных параллельных загрузок
@@ -1076,7 +1077,7 @@ function updateJob(job) {
   /** @type {Array<{ setId?: number, setName?: string, mirror?: string, bytes?: number, totalBytes?: number | null, percent?: number | null }>} */
   const activeTransfers = Array.isArray(job.activeTransfers) && job.activeTransfers.length > 0
     ? job.activeTransfers
-    : ((job.currentSetId || job.currentSetName) && ['running', 'queued'].includes(job.status))
+    : ((job.currentSetId || job.currentSetName) && ['preparing', 'running', 'queued'].includes(job.status))
       ? [{
           setId: job.currentSetId,
           setName: job.currentSetName || `Набор ${job.currentSetId}`,
@@ -1088,7 +1089,7 @@ function updateJob(job) {
       : [];
 
   if (transfersChevronEl) {
-    transfersChevronEl.hidden = activeTransfers.length === 0 && !['running', 'queued'].includes(job.status);
+    transfersChevronEl.hidden = activeTransfers.length === 0 && !['preparing', 'running', 'queued'].includes(job.status);
   }
 
   if (transfersListEl && transfersDetailsEl) {
@@ -1289,7 +1290,7 @@ function finishJob(job, errorMessage = '') {
     if (cancelButton) cancelButton.hidden = true;
     persistJobId(null);
   }
-  const canRetry = Boolean(job && (job.canRetryFailed ?? (job.failed > 0)) && !['queued', 'running'].includes(job.status));
+  const canRetry = Boolean(job && (job.canRetryFailed ?? (job.failed > 0)) && !['preparing', 'queued', 'running'].includes(job.status));
   if (retryFailedButton) {
     retryFailedButton.hidden = !canRetry;
     if (canRetry) {
@@ -1413,7 +1414,7 @@ async function restoreJob() {
   if (!storedId) return;
   try {
     const job = await api(`/api/downloads/${storedId}`);
-    if (['queued', 'running'].includes(job.status)) {
+    if (['preparing', 'queued', 'running'].includes(job.status)) {
       startJobPolling(job.id);
       updateJob(job);
     } else if (job.status === 'paused') {
