@@ -1,5 +1,5 @@
 // @ts-check
-"use strict";
+'use strict';
 
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,12 +16,7 @@ const {
   loadStateFromDisk,
   waitForPendingSaveState,
 } = require('../lib/jobs.js');
-const {
-  getSettingsFilePath,
-  getLegacySettingsFilePath,
-  loadSettings,
-  saveSettings,
-} = require('../lib/osu.js');
+const { getSettingsFilePath, getLegacySettingsFilePath, loadSettings, saveSettings } = require('../lib/osu.js');
 const { bootstrapServer, resetBootstrap } = require('../server.js');
 
 describe('Разделение каталога загрузок и каталога данных/конфигурации (Data Dir Separation)', () => {
@@ -130,8 +125,14 @@ describe('Разделение каталога загрузок и катало
     const expectedState = path.join(tempDataDir, '.state.json');
     const unexpectedState = path.join(tempDownloadsDir, '.state.json');
 
-    const stateExistsInData = await fs.access(expectedState).then(() => true).catch(() => false);
-    const stateExistsInDownloads = await fs.access(unexpectedState).then(() => true).catch(() => false);
+    const stateExistsInData = await fs
+      .access(expectedState)
+      .then(() => true)
+      .catch(() => false);
+    const stateExistsInDownloads = await fs
+      .access(unexpectedState)
+      .then(() => true)
+      .catch(() => false);
 
     assert.equal(stateExistsInData, true, 'Файл .state.json должен быть сохранён в DATA_DIR');
     assert.equal(stateExistsInDownloads, false, 'Файл .state.json НЕ должен создаваться в DOWNLOADS_DIR');
@@ -149,8 +150,14 @@ describe('Разделение каталога загрузок и катало
     const expectedSettings = path.join(tempDataDir, '.settings.json');
     const unexpectedSettings = path.join(tempDownloadsDir, '.settings.json');
 
-    const existsInData = await fs.access(expectedSettings).then(() => true).catch(() => false);
-    const existsInDownloads = await fs.access(unexpectedSettings).then(() => true).catch(() => false);
+    const existsInData = await fs
+      .access(expectedSettings)
+      .then(() => true)
+      .catch(() => false);
+    const existsInDownloads = await fs
+      .access(unexpectedSettings)
+      .then(() => true)
+      .catch(() => false);
 
     assert.equal(existsInData, true, 'Файл .settings.json должен быть сохранён в DATA_DIR');
     assert.equal(existsInDownloads, false, 'Файл .settings.json НЕ должен создаваться в DOWNLOADS_DIR');
@@ -186,7 +193,13 @@ describe('Разделение каталога загрузок и катало
 
     // В DATA_DIR файла пока нет:
     const dataStateFile = path.join(tempDataDir, '.state.json');
-    assert.equal(await fs.access(dataStateFile).then(() => true).catch(() => false), false);
+    assert.equal(
+      await fs
+        .access(dataStateFile)
+        .then(() => true)
+        .catch(() => false),
+      false,
+    );
 
     const restored = await loadStateFromDisk();
     assert.equal(restored, true, 'loadStateFromDisk должен успешно восстановить задачи из legacy-файла');
@@ -195,7 +208,13 @@ describe('Разделение каталога загрузок и катало
 
     // При последующем сохранении пишется уже в DATA_DIR:
     await saveStateToDisk();
-    assert.equal(await fs.access(dataStateFile).then(() => true).catch(() => false), true);
+    assert.equal(
+      await fs
+        .access(dataStateFile)
+        .then(() => true)
+        .catch(() => false),
+      true,
+    );
   });
 
   it('loadSettings восстанавливает настройки из legacy-файла в DOWNLOADS_DIR, если в DATA_DIR файл отсутствует', async () => {
@@ -214,7 +233,13 @@ describe('Разделение каталога загрузок и катало
 
     // В DATA_DIR файла нет:
     const dataSettingsFile = path.join(tempDataDir, '.settings.json');
-    assert.equal(await fs.access(dataSettingsFile).then(() => true).catch(() => false), false);
+    assert.equal(
+      await fs
+        .access(dataSettingsFile)
+        .then(() => true)
+        .catch(() => false),
+      false,
+    );
 
     const loaded = loadSettings();
     assert.equal(loaded.checkExisting, false);
@@ -222,7 +247,13 @@ describe('Разделение каталога загрузок и катало
 
     // При последующем сохранении пишется уже в DATA_DIR:
     await saveSettings({ postDownloadAction: 'move' });
-    assert.equal(await fs.access(dataSettingsFile).then(() => true).catch(() => false), true);
+    assert.equal(
+      await fs
+        .access(dataSettingsFile)
+        .then(() => true)
+        .catch(() => false),
+      true,
+    );
   });
 
   it('bootstrapServer создаёт обе директории (DATA_DIR и DOWNLOADS_DIR) при запуске', async () => {
@@ -238,4 +269,3 @@ describe('Разделение каталога загрузок и катало
     assert.equal(downloadsDirStat.isDirectory(), true);
   });
 });
-

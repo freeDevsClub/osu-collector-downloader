@@ -1,5 +1,5 @@
 // @ts-check
-"use strict";
+'use strict';
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -25,8 +25,12 @@ describe('Декомпозиция роутера API (API Router & Modular Rout
     let responseBody = '';
     const mockRes = /** @type {any} */ ({
       statusCode: 200,
-      writeHead(status, headers) { this.statusCode = status; },
-      end(data) { responseBody = data; },
+      writeHead(status, headers) {
+        this.statusCode = status;
+      },
+      end(data) {
+        responseBody = data;
+      },
     });
 
     await router.handle(mockReq, mockRes, new URL('http://127.0.0.1/api/test/static'));
@@ -48,8 +52,12 @@ describe('Декомпозиция роутера API (API Router & Modular Rout
     const mockReq = /** @type {any} */ ({ method: 'GET' });
     let responseBody = '';
     const mockRes = /** @type {any} */ ({
-      writeHead(status) { this.statusCode = status; },
-      end(data) { responseBody = data; },
+      writeHead(status) {
+        this.statusCode = status;
+      },
+      end(data) {
+        responseBody = data;
+      },
     });
 
     await router.handle(mockReq, mockRes, new URL('http://127.0.0.1/api/items/42/sub/xyz-99'));
@@ -62,11 +70,17 @@ describe('Декомпозиция роутера API (API Router & Modular Rout
     const calls = [];
 
     // 1. Статический
-    router.exact('/api/downloads/active', () => { calls.push('active'); });
+    router.exact('/api/downloads/active', () => {
+      calls.push('active');
+    });
     // 2. Суффикс действия
-    router.pattern('/api/downloads/:id/cancel', () => { calls.push('cancel'); });
+    router.pattern('/api/downloads/:id/cancel', () => {
+      calls.push('cancel');
+    });
     // 3. Общий :id
-    router.pattern('/api/downloads/:id', () => { calls.push('generic'); });
+    router.pattern('/api/downloads/:id', () => {
+      calls.push('generic');
+    });
 
     const mockRes = /** @type {any} */ ({ writeHead() {}, end() {} });
 
@@ -149,4 +163,3 @@ describe('Декомпозиция роутера API (API Router & Modular Rout
     assert.equal(api.patternRoutes.length >= 6, true);
   });
 });
-

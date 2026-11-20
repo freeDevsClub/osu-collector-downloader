@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, beforeEach, before } = require('node:test');
 const assert = require('node:assert/strict');
@@ -99,8 +99,8 @@ describe('Оптимизация updateMapBadge: переход с O(N²) на O
 
     // Проверяем выборочные результаты
     assert.equal(badges[0].className, 'badge-tag tag-installed'); // index 0 (% 2 === 0)
-    assert.equal(badges[1].className, 'badge-tag tag-new');       // index 1
-    assert.equal(badges[3].className, 'badge-tag tag-downloaded');// index 3 (% 3 === 0, % 2 !== 0)
+    assert.equal(badges[1].className, 'badge-tag tag-new'); // index 1
+    assert.equal(badges[3].className, 'badge-tag tag-downloaded'); // index 3 (% 3 === 0, % 2 !== 0)
   });
 });
 
@@ -108,7 +108,7 @@ describe('Оптимизация updateJob и DOM-реконсиляция ош�
   it('style.css не содержит CSS-свойства content-visibility: auto и contain-intrinsic-size, исключая layout thrashing при скролле', async () => {
     const fs = require('node:fs/promises');
     const path = require('node:path');
-    let content = '';
+    let content;
     try {
       content = await fs.readFile(path.join(__dirname, '..', 'style.css'), 'utf-8');
     } catch {
@@ -205,4 +205,3 @@ describe('Оптимизация updateJob и DOM-реконсиляция ош�
     }
   });
 });
-

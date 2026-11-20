@@ -1,5 +1,5 @@
 // @ts-check
-"use strict";
+'use strict';
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -34,7 +34,7 @@ describe('Декомпозиция клиентского монолита на 
     collectionMod = await import('../public/js/components/collection.js');
     downloadsMod = await import('../public/js/components/downloads.js');
 
-    await new Promise(resolve => {
+    await new Promise((resolve) => {
       server.listen(0, '127.0.0.1', () => {
         const addr = /** @type {import('node:net').AddressInfo} */ (server.address());
         port = addr.port;
@@ -45,7 +45,7 @@ describe('Декомпозиция клиентского монолита на 
   });
 
   after(async () => {
-    await new Promise(resolve => server.close(resolve));
+    await new Promise((resolve) => server.close(resolve));
   });
 
   it('public/js/utils.js экспортирует чистые функции форматирования и DOM-утилиты', () => {
@@ -86,12 +86,15 @@ describe('Декомпозиция клиентского монолита на 
   });
 
   it('public/js/components/settings.js управляет моделью настроек osu!', () => {
-    settingsMod.renderOsuSettings({
-      osuPath: 'C:\\osu',
-      valid: true,
-      songsCount: 150,
-      postDownloadAction: 'move',
-    }, false);
+    settingsMod.renderOsuSettings(
+      {
+        osuPath: 'C:\\osu',
+        valid: true,
+        songsCount: 150,
+        postDownloadAction: 'move',
+      },
+      false,
+    );
 
     const s = settingsMod.getOsuSettings();
     assert.equal(s.osuPath, 'C:\\osu');

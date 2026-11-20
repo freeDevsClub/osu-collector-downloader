@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,14 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const {
-  jobs,
-  jobEvents,
-  emitJobUpdate,
-  getActiveJob,
-  setActiveJob,
-  safeJobForClient,
-} = require('../lib/jobs.js');
+const { jobs, jobEvents, emitJobUpdate, getActiveJob, setActiveJob, safeJobForClient } = require('../lib/jobs.js');
 const { server } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
 const { PORT, buildMirrorUrl } = require('../lib/config.js');
@@ -45,17 +38,19 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
       });
       res.end(validZipBuffer);
     });
-    await new Promise(r => mockMirrorServer.listen(0, '127.0.0.1', r));
+    await new Promise((r) => mockMirrorServer.listen(0, '127.0.0.1', r));
     mockMirrorPort = /** @type {import('node:net').AddressInfo} */ (mockMirrorServer.address()).port;
 
-    setMirrorsForTest([{
-      id: 'mock_sse_mirror',
-      label: 'Mock SSE Mirror',
-      build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
-    }]);
+    setMirrorsForTest([
+      {
+        id: 'mock_sse_mirror',
+        label: 'Mock SSE Mirror',
+        build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
+      },
+    ]);
 
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
   });
 
@@ -65,13 +60,13 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
       if (typeof appServer.closeAllConnections === 'function') {
         appServer.closeAllConnections();
       }
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
     if (mockMirrorServer) {
       if (typeof mockMirrorServer.closeAllConnections === 'function') {
         mockMirrorServer.closeAllConnections();
       }
-      await new Promise(resolve => mockMirrorServer.close(resolve));
+      await new Promise((resolve) => mockMirrorServer.close(resolve));
     }
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -98,10 +93,14 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
     };
     jobs.set(job.id, job);
 
-    const res = await new Promise(resolve => {
-      http.get(`http://127.0.0.1:${appPort}/api/downloads/${job.id}/events`, {
-        headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
-      }, resolve);
+    const res = await new Promise((resolve) => {
+      http.get(
+        `http://127.0.0.1:${appPort}/api/downloads/${job.id}/events`,
+        {
+          headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
+        },
+        resolve,
+      );
     });
 
     assert.equal(res.statusCode, 200);
@@ -109,9 +108,9 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
     assert.equal(res.headers['cache-control'], 'no-cache, no-transform');
     assert.equal(res.headers['connection'], 'keep-alive');
 
-    const firstChunk = await new Promise(resolve => {
+    const firstChunk = await new Promise((resolve) => {
       let buf = '';
-      res.on('data', chunk => {
+      res.on('data', (chunk) => {
         buf += chunk.toString('utf-8');
         if (buf.includes('data:')) resolve(buf);
       });
@@ -151,35 +150,39 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
     const receivedEvents = [];
     /** @type {(value?: any) => void} */
     let resolveThirdEvent = () => {};
-    const thirdEventPromise = new Promise(resolve => {
+    const thirdEventPromise = new Promise((resolve) => {
       resolveThirdEvent = resolve;
     });
 
     let buffer = '';
-    const req = http.get(`http://127.0.0.1:${appPort}/api/downloads/${job.id}/events`, {
-      headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
-    }, res => {
-      res.on('data', chunk => {
-        buffer += chunk.toString('utf-8');
-        const blocks = buffer.split('\n\n');
-        buffer = blocks.pop() || '';
-        for (const block of blocks) {
-          const match = block.match(/^data:\s*(.+)$/m);
-          if (match) {
-            try {
-              const data = JSON.parse(match[1]);
-              receivedEvents.push(data);
-              if (receivedEvents.length >= 3) {
-                resolveThirdEvent();
-              }
-            } catch {}
+    const req = http.get(
+      `http://127.0.0.1:${appPort}/api/downloads/${job.id}/events`,
+      {
+        headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
+      },
+      (res) => {
+        res.on('data', (chunk) => {
+          buffer += chunk.toString('utf-8');
+          const blocks = buffer.split('\n\n');
+          buffer = blocks.pop() || '';
+          for (const block of blocks) {
+            const match = block.match(/^data:\s*(.+)$/m);
+            if (match) {
+              try {
+                const data = JSON.parse(match[1]);
+                receivedEvents.push(data);
+                if (receivedEvents.length >= 3) {
+                  resolveThirdEvent();
+                }
+              } catch {}
+            }
           }
-        }
-      });
-    });
+        });
+      },
+    );
 
     // Даём первому событию (initial snapshot) дойти
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 50));
 
     // Генерируем 2 обновления задачи
     job.status = 'running';
@@ -226,10 +229,14 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
     };
     jobs.set(job.id, job);
 
-    const res = await new Promise(resolve => {
-      http.get(`http://127.0.0.1:${appPort}/api/downloads/events?id=${job.id}`, {
-        headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
-      }, resolve);
+    const res = await new Promise((resolve) => {
+      http.get(
+        `http://127.0.0.1:${appPort}/api/downloads/events?id=${job.id}`,
+        {
+          headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
+        },
+        resolve,
+      );
     });
 
     assert.equal(res.statusCode, 200);
@@ -261,7 +268,7 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
 
     // Ждём регистрации подписчика на сервере
     while (jobEvents.listenerCount(`job:${job.id}`) === 0) {
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 10));
     }
     assert.equal(jobEvents.listenerCount(`job:${job.id}`), 1);
 
@@ -270,7 +277,7 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
 
     // Ждём срабатывания req.on('close') на сервере
     while (jobEvents.listenerCount(`job:${job.id}`) > 0) {
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 10));
     }
     assert.equal(jobEvents.listenerCount(`job:${job.id}`), 0);
   });
@@ -287,7 +294,7 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
             beatmapCount: 1,
             beatmapsets: [{ id: 8801 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -311,32 +318,36 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
       const sseUpdates = [];
       /** @type {(value?: any) => void} */
       let resolveFinished = () => {};
-      const finishedPromise = new Promise(resolve => {
+      const finishedPromise = new Promise((resolve) => {
         resolveFinished = resolve;
       });
 
       let buf = '';
-      const req = http.get(`http://127.0.0.1:${appPort}/api/downloads/${jobId}/events`, {
-        headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
-      }, res => {
-        res.on('data', chunk => {
-          buf += chunk.toString('utf-8');
-          const blocks = buf.split('\n\n');
-          buf = blocks.pop() || '';
-          for (const block of blocks) {
-            const match = block.match(/^data:\s*(.+)$/m);
-            if (match) {
-              try {
-                const data = JSON.parse(match[1]);
-                sseUpdates.push(data);
-                if (data.status === 'finished') {
-                  resolveFinished();
-                }
-              } catch {}
+      const req = http.get(
+        `http://127.0.0.1:${appPort}/api/downloads/${jobId}/events`,
+        {
+          headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
+        },
+        (res) => {
+          res.on('data', (chunk) => {
+            buf += chunk.toString('utf-8');
+            const blocks = buf.split('\n\n');
+            buf = blocks.pop() || '';
+            for (const block of blocks) {
+              const match = block.match(/^data:\s*(.+)$/m);
+              if (match) {
+                try {
+                  const data = JSON.parse(match[1]);
+                  sseUpdates.push(data);
+                  if (data.status === 'finished') {
+                    resolveFinished();
+                  }
+                } catch {}
+              }
             }
-          }
-        });
-      });
+          });
+        },
+      );
 
       await finishedPromise;
       req.destroy();
@@ -360,9 +371,7 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
       doneIds: new Set([1001]),
       skipIds: new Set(),
       errIds: new Set([1002]),
-      errorsById: new Map([
-        [1002, { id: 1002, name: 'Beatmap 1002', error: 'Mirror 500 error' }],
-      ]),
+      errorsById: new Map([[1002, { id: 1002, name: 'Beatmap 1002', error: 'Mirror 500 error' }]]),
       status: 'running',
     };
 
@@ -387,9 +396,7 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
       doneIds: new Set(),
       skipIds: new Set(),
       errIds: new Set([2001]),
-      errorsById: new Map([
-        [2001, { id: 2001, name: 'Beatmap 2001', error: 'Fail' }],
-      ]),
+      errorsById: new Map([[2001, { id: 2001, name: 'Beatmap 2001', error: 'Fail' }]]),
       status: 'running',
       currentSetId: 2002,
       currentBytes: 1024,
@@ -402,15 +409,19 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
 
     /** @type {any[]} */
     const sseUpdates = [];
-    const res = await new Promise(resolve => {
-      http.get(`http://127.0.0.1:${appPort}/api/downloads/${job.id}/events`, {
-        headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
-      }, resolve);
+    const res = await new Promise((resolve) => {
+      http.get(
+        `http://127.0.0.1:${appPort}/api/downloads/${job.id}/events`,
+        {
+          headers: { Host: `127.0.0.1:${PORT}`, Accept: 'text/event-stream' },
+        },
+        resolve,
+      );
     });
 
     let buf = '';
-    const updateReceived = new Promise(resolve => {
-      res.on('data', chunk => {
+    const updateReceived = new Promise((resolve) => {
+      res.on('data', (chunk) => {
         buf += chunk.toString('utf-8');
         const blocks = buf.split('\n\n');
         buf = blocks.pop() || '';

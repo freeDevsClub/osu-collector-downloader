@@ -43,10 +43,10 @@ export function renderMirrors() {
  * @param {Array<{ id: string, label: string, cooldownMs?: number }>} mirrors
  */
 export function updateMirrorsFromData(mirrors) {
-  mirrorStatus = (mirrors || []).map(mirror => ({
+  mirrorStatus = (mirrors || []).map((mirror) => ({
     id: mirror.id,
     label: mirror.label,
-    cooldownUntil: (mirror.cooldownMs && mirror.cooldownMs > 0) ? Date.now() + mirror.cooldownMs : 0,
+    cooldownUntil: mirror.cooldownMs && mirror.cooldownMs > 0 ? Date.now() + mirror.cooldownMs : 0,
   }));
   renderMirrors();
 }
@@ -62,7 +62,7 @@ export async function loadMirrors() {
 
 export function hasActiveCooldowns() {
   const now = Date.now();
-  return mirrorStatus.some(m => m.cooldownUntil && m.cooldownUntil > now);
+  return mirrorStatus.some((m) => m.cooldownUntil && m.cooldownUntil > now);
 }
 
 /**
@@ -84,4 +84,3 @@ export function initMirrorsUi(options = {}) {
     }
   }, 4000);
 }
-

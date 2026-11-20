@@ -103,7 +103,7 @@ export function renderMapList(maps = []) {
       head.className = 'map-item-head';
       const title = document.createElement('span');
       title.className = 'map-title';
-      title.textContent = isPending ? `Набор ${map?.id ?? ''}` : (map?.label || `Набор ${map?.id ?? ''}`);
+      title.textContent = isPending ? `Набор ${map?.id ?? ''}` : map?.label || `Набор ${map?.id ?? ''}`;
       head.append(title);
       const badge = document.createElement('span');
       updateMapBadge(badge, map?.id);
@@ -126,7 +126,7 @@ export function renderMapList(maps = []) {
     index += CHUNK_SIZE;
     list.append(fragment);
     if (index < maps.length) {
-      const idle = (typeof window !== 'undefined' && window.requestIdleCallback) || (cb => setTimeout(cb, 0));
+      const idle = (typeof window !== 'undefined' && window.requestIdleCallback) || ((cb) => setTimeout(cb, 0));
       idle(() => {
         if (renderId === mapListRenderId) renderChunk();
       });
@@ -234,7 +234,9 @@ export function startMetadataPolling(collectionId) {
  */
 export function scheduleNextMetadataPoll(delay = 1200) {
   if (metadataPollTimer) clearTimeout(metadataPollTimer);
-  metadataPollTimer = setTimeout(() => { void pollMetadata(); }, delay);
+  metadataPollTimer = setTimeout(() => {
+    void pollMetadata();
+  }, delay);
 }
 
 export async function pollMetadata() {
@@ -372,7 +374,7 @@ export function renderCollection(data, callbacks = {}) {
   }
   updateMetadataBadge(data);
 
-  renderMapList(data.maps || (data.setIds || []).map(id => ({ id })));
+  renderMapList(data.maps || (data.setIds || []).map((id) => ({ id })));
   const collectionCard = byId('collection-card');
   collectionCard?.classList.add('visible');
   if (typeof callbacks?.updateDownloadButton === 'function') {
@@ -382,11 +384,23 @@ export function renderCollection(data, callbacks = {}) {
   const collectionStatus = byId('collection-status');
   const installedCount = data.installedSetIds?.length || 0;
   if (installedCount === data.count && data.count > 0) {
-    setStatus(collectionStatus, `Все ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} карт из этой коллекции уже есть в osu! Songs.`, 'success');
+    setStatus(
+      collectionStatus,
+      `Все ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} карт из этой коллекции уже есть в osu! Songs.`,
+      'success',
+    );
   } else if (installedCount > 0) {
-    setStatus(collectionStatus, `Найдено ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} (${installedCount} уже в osu!, ${data.count - installedCount} новых).`, 'success');
+    setStatus(
+      collectionStatus,
+      `Найдено ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} (${installedCount} уже в osu!, ${data.count - installedCount} новых).`,
+      'success',
+    );
   } else {
-    setStatus(collectionStatus, `Найдено ${formatPluralRu(data.count, 'уникальный набор', 'уникальных набора', 'уникальных наборов')} карт.`, 'success');
+    setStatus(
+      collectionStatus,
+      `Найдено ${formatPluralRu(data.count, 'уникальный набор', 'уникальных набора', 'уникальных наборов')} карт.`,
+      'success',
+    );
   }
 
   if (!data.metadataComplete && !data.metadataDegraded) {
@@ -414,7 +428,7 @@ export function initCollectionUi(callbacks = {}) {
   const collectionCard = byId('collection-card');
   const collectionStatus = byId('collection-status');
 
-  collectionForm?.addEventListener('submit', async event => {
+  collectionForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const value = collectionUrl ? collectionUrl.value.trim() : '';
     if (!value) return;
@@ -435,7 +449,11 @@ export function initCollectionUi(callbacks = {}) {
     } catch (rawError) {
       const error = toAny(rawError);
       if (error.name === 'TimeoutError') {
-        setStatus(collectionStatus, 'Время ожидания ответа истекло. Возможно, коллекция слишком большая или сервер osu!Collector перегружен.', 'error');
+        setStatus(
+          collectionStatus,
+          'Время ожидания ответа истекло. Возможно, коллекция слишком большая или сервер osu!Collector перегружен.',
+          'error',
+        );
       } else {
         setStatus(collectionStatus, error.message, 'error');
       }
@@ -447,4 +465,3 @@ export function initCollectionUi(callbacks = {}) {
     }
   });
 }
-

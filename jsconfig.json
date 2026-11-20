@@ -7,18 +7,11 @@
     "noImplicitAny": false,
     "strictNullChecks": false,
     "noEmit": true,
+    "skipLibCheck": true,
+    "maxNodeModuleJsDepth": 0,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": [
-    "server.js",
-    "app.js",
-    "public/**/*.js",
-    "lib/**/*.js",
-    "test/**/*.js"
-  ],
-  "exclude": [
-    "node_modules",
-    "downloads"
-  ]
+  "include": ["server.js", "app.js", "public/**/*.js", "lib/**/*.js", "test/**/*.js"],
+  "exclude": ["node_modules", "downloads"]
 }

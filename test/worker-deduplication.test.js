@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -58,8 +58,8 @@ describe('Устранение дублирования воркеров ска�
 
       try {
         const validZipBuffer = Buffer.from([
-          0x50, 0x4b, 0x03, 0x04, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-          0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0x50, 0x4b, 0x03, 0x04, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x50,
+          0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]);
         await fs.writeFile(path.join(tempDir, '2001.osz'), validZipBuffer);
 

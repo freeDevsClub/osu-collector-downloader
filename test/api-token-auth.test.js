@@ -1,14 +1,11 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const net = require('node:net');
 
-const {
-  server,
-  startServer,
-} = require('../server.js');
+const { server, startServer } = require('../server.js');
 const {
   getApiToken,
   setApiToken,
@@ -32,7 +29,7 @@ describe('Аутентификация локального API через се�
 
   before(async () => {
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {net.AddressInfo} */ (appServer.address()).port;
   });
 
@@ -40,7 +37,7 @@ describe('Аутентификация локального API через се�
     setApiTokenRequired(false);
     resetApiToken();
     if (appServer) {
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
   });
 
@@ -66,13 +63,17 @@ describe('Аутентификация локального API через се�
           method,
           headers: {
             Host: `127.0.0.1:${PORT}`,
-            ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)) } : {}),
+            ...(payload
+              ? { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)) }
+              : {}),
             ...headers,
           },
         },
-        res => {
+        (res) => {
           let text = '';
-          res.on('data', chunk => { text += chunk; });
+          res.on('data', (chunk) => {
+            text += chunk;
+          });
           res.on('end', () => {
             let jsonBody = null;
             try {
@@ -85,7 +86,7 @@ describe('Аутентификация локального API через се�
               text,
             });
           });
-        }
+        },
       );
       req.on('error', reject);
       if (payload) req.write(payload);
@@ -119,19 +120,34 @@ describe('Аутентификация локального API через се�
     });
 
     it('отклоняет запросы с неверным токеном в заголовке X-API-Token', async () => {
-      const res = await request('POST', '/api/osu/settings', { 'x-api-token': 'wrong-token-value' }, { osuPath: 'C:\\osu' });
+      const res = await request(
+        'POST',
+        '/api/osu/settings',
+        { 'x-api-token': 'wrong-token-value' },
+        { osuPath: 'C:\\osu' },
+      );
       assert.equal(res.status, 401);
       assert.match(res.body?.error, /Отсутствует или недействителен токен авторизации API/);
     });
 
     it('отклоняет запросы с неверным токеном в Authorization: Bearer', async () => {
-      const res = await request('POST', '/api/osu/settings', { 'authorization': 'Bearer fake_token' }, { osuPath: 'C:\\osu' });
+      const res = await request(
+        'POST',
+        '/api/osu/settings',
+        { authorization: 'Bearer fake_token' },
+        { osuPath: 'C:\\osu' },
+      );
       assert.equal(res.status, 401);
       assert.match(res.body?.error, /Отсутствует или недействителен токен авторизации API/);
     });
 
     it('отклоняет запросы с неверным токеном в cookie osu_local_token', async () => {
-      const res = await request('POST', '/api/osu/settings', { 'cookie': `${localApiTokenCookie}=invalid_token` }, { osuPath: 'C:\\osu' });
+      const res = await request(
+        'POST',
+        '/api/osu/settings',
+        { cookie: `${localApiTokenCookie}=invalid_token` },
+        { osuPath: 'C:\\osu' },
+      );
       assert.equal(res.status, 401);
       assert.match(res.body?.error, /Отсутствует или недействителен токен авторизации API/);
     });
@@ -164,13 +180,13 @@ describe('Аутентификация локального API через се�
 
     it('успешно принимает запрос с заголовком Authorization: Bearer <token>', async () => {
       const token = getApiToken();
-      const res = await request('POST', '/api/osu/settings', { 'authorization': `Bearer ${token}` }, {});
+      const res = await request('POST', '/api/osu/settings', { authorization: `Bearer ${token}` }, {});
       assert.equal(res.status, 200);
     });
 
     it('успешно принимает запрос с cookie osu_local_token', async () => {
       const token = getApiToken();
-      const res = await request('POST', '/api/osu/settings', { 'cookie': `${localApiTokenCookie}=${token}` }, {});
+      const res = await request('POST', '/api/osu/settings', { cookie: `${localApiTokenCookie}=${token}` }, {});
       assert.equal(res.status, 200);
     });
 

@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -73,9 +73,9 @@ describe('Worker Pool и per-mirror concurrency', () => {
     s3 = trackServer('m3', 40);
 
     await Promise.all([
-      new Promise(r => s1.listen(0, '127.0.0.1', r)),
-      new Promise(r => s2.listen(0, '127.0.0.1', r)),
-      new Promise(r => s3.listen(0, '127.0.0.1', r)),
+      new Promise((r) => s1.listen(0, '127.0.0.1', r)),
+      new Promise((r) => s2.listen(0, '127.0.0.1', r)),
+      new Promise((r) => s3.listen(0, '127.0.0.1', r)),
     ]);
 
     port1 = /** @type {import('node:net').AddressInfo} */ (s1.address()).port;
@@ -88,9 +88,9 @@ describe('Worker Pool и per-mirror concurrency', () => {
   after(async () => {
     resetMirrorsForTest();
     await Promise.all([
-      new Promise(r => s1.close(r)),
-      new Promise(r => s2.close(r)),
-      new Promise(r => s3.close(r)),
+      new Promise((r) => s1.close(r)),
+      new Promise((r) => s2.close(r)),
+      new Promise((r) => s3.close(r)),
     ]);
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -119,13 +119,13 @@ describe('Worker Pool и per-mirror concurrency', () => {
     assert.equal(isMirrorBusy(mirror), true);
 
     let secondAcquired = false;
-    const p2 = acquireMirrorSlot(mirror).then(release => {
+    const p2 = acquireMirrorSlot(mirror).then((release) => {
       secondAcquired = true;
       return release;
     });
 
     // p2 должен ждать
-    await new Promise(r => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 20));
     assert.equal(secondAcquired, false);
 
     // Освобождаем 1
@@ -155,9 +155,9 @@ describe('Worker Pool и per-mirror concurrency', () => {
 
   it('параллельно скачивает 3 набора через 3 зеркала, не превышая 1 запрос на зеркало', async () => {
     setMirrorsForTest([
-      { id: 'm1', label: 'Mirror 1', build: id => `http://127.0.0.1:${port1}/d/${id}` },
-      { id: 'm2', label: 'Mirror 2', build: id => `http://127.0.0.1:${port2}/d/${id}` },
-      { id: 'm3', label: 'Mirror 3', build: id => `http://127.0.0.1:${port3}/d/${id}` }
+      { id: 'm1', label: 'Mirror 1', build: (id) => `http://127.0.0.1:${port1}/d/${id}` },
+      { id: 'm2', label: 'Mirror 2', build: (id) => `http://127.0.0.1:${port2}/d/${id}` },
+      { id: 'm3', label: 'Mirror 3', build: (id) => `http://127.0.0.1:${port3}/d/${id}` },
     ]);
 
     const job = {
@@ -188,7 +188,10 @@ describe('Worker Pool и per-mirror concurrency', () => {
     assert.equal(job.errIds.size, 0);
 
     // Проверяем, что запросы распределились по зеркалам и шли параллельно
-    assert.ok(mirrorStats.maxGlobalActive >= 2, `Ожидалась параллельность >= 2, получено: ${mirrorStats.maxGlobalActive}`);
+    assert.ok(
+      mirrorStats.maxGlobalActive >= 2,
+      `Ожидалась параллельность >= 2, получено: ${mirrorStats.maxGlobalActive}`,
+    );
     assert.equal(mirrorStats.m1.maxActive, 1, 'Mirror 1 не должен иметь более 1 активного запроса');
     assert.equal(mirrorStats.m2.maxActive, 1, 'Mirror 2 не должен иметь более 1 активного запроса');
     assert.equal(mirrorStats.m3.maxActive, 1, 'Mirror 3 не должен иметь более 1 активного запроса');
@@ -271,8 +274,8 @@ describe('Worker Pool и per-mirror concurrency', () => {
 
   it('выбирает свободное зеркало вместо блокировки на занятом зеркале', async () => {
     setMirrorsForTest([
-      { id: 'm1', label: 'Mirror 1', build: id => `http://127.0.0.1:${port1}/d/${id}` },
-      { id: 'm2', label: 'Mirror 2', build: id => `http://127.0.0.1:${port2}/d/${id}` }
+      { id: 'm1', label: 'Mirror 1', build: (id) => `http://127.0.0.1:${port1}/d/${id}` },
+      { id: 'm2', label: 'Mirror 2', build: (id) => `http://127.0.0.1:${port2}/d/${id}` },
     ]);
 
     // Захватываем m1 вручную, делая его занятым

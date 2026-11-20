@@ -1,5 +1,5 @@
 // @ts-check
-"use strict";
+'use strict';
 
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -34,18 +34,10 @@ const {
   selectFolderDialog,
 } = require('../lib/osu.js');
 
-const {
-  jobFilePath,
-  downloadSet,
-  verifyZipFile,
-} = require('../lib/downloader.js');
+const { jobFilePath, downloadSet, verifyZipFile } = require('../lib/downloader.js');
 const { MAX_OSZ_DOWNLOAD_BYTES } = require('../lib/config.js');
 
-const {
-  jobs,
-  launchJob,
-  safeJobForClient,
-} = require('../lib/jobs.js');
+const { jobs, launchJob, safeJobForClient } = require('../lib/jobs.js');
 
 /**
  * Создает валидный ZIP-буфер в памяти для тестирования extractZip.
@@ -426,16 +418,16 @@ describe('Интеграция с локальной директорией osu!
 
     // Параллельные вызовы getCachedOsuSongsAsync
     invalidateCachedSongs();
-    const [p1, p2] = await Promise.all([
-      getCachedOsuSongsAsync(mockSongsDir),
-      getCachedOsuSongsAsync(mockSongsDir),
-    ]);
+    const [p1, p2] = await Promise.all([getCachedOsuSongsAsync(mockSongsDir), getCachedOsuSongsAsync(mockSongsDir)]);
     assert.equal(p1, p2, 'Параллельные вызовы должны возвращать общий Set');
     assert.equal(p1.size, 4);
   });
 
   test('buildBeatmapFolderName формирует безопасные имена папок для Windows и очищает хвостовые точки/пробелы', () => {
-    const n1 = buildBeatmapFolderName(12345, { artist: 'Artist / Slash', title: 'Title : Colon * Star ? Question " Quote < > |' });
+    const n1 = buildBeatmapFolderName(12345, {
+      artist: 'Artist / Slash',
+      title: 'Title : Colon * Star ? Question " Quote < > |',
+    });
     assert.equal(n1, '12345 Artist _ Slash - Title _ Colon _ Star _ Question _ Quote _ _ _');
     const n2 = buildBeatmapFolderName(67890, null);
     assert.equal(n2, '67890');
@@ -494,19 +486,16 @@ describe('Интеграция с локальной директорией osu!
     const corruptZipPath = path.join(tempBaseDir, 'corrupt_crc.osz');
     await fs.promises.writeFile(corruptZipPath, corruptZipBuf);
 
-    await assert.rejects(
-      async () => {
-        await extractZip(corruptZipPath, corruptOutDir);
-      },
-      /контрольной суммы CRC32/
-    );
+    await assert.rejects(async () => {
+      await extractZip(corruptZipPath, corruptOutDir);
+    }, /контрольной суммы CRC32/);
 
     // Целевая папка не должна быть создана
     assert.equal(fs.existsSync(corruptOutDir), false, 'Целевая папка не должна существовать после сбоя');
 
     // Временные папки не должны оставаться в tempBaseDir
     const entries = await fs.promises.readdir(tempBaseDir);
-    const tempLeftovers = entries.filter(e => e.startsWith('.tmp_extract_'));
+    const tempLeftovers = entries.filter((e) => e.startsWith('.tmp_extract_'));
     assert.equal(tempLeftovers.length, 0, 'Временные staging-директории должны быть очищены');
   });
 
@@ -515,7 +504,7 @@ describe('Интеграция с локальной директорией osu!
     const unsafeZipBuf = createMockZip({
       'valid.txt': 'valid content',
       'malicious.txt:hidden': 'ads stream',
-      'CON': 'device name CON',
+      CON: 'device name CON',
       'nul.txt': 'device name NUL',
       'aux.mp3': 'device name AUX',
       'trailing_dot./nested.txt': 'folder with trailing dot',
@@ -646,12 +635,9 @@ describe('Интеграция с локальной директорией osu!
     }
 
     // 4. Попытка передать невалидный osuPath выбрасывает ошибку
-    await assert.rejects(
-      async () => {
-        await saveSettings({ osuPath: path.join(tempBaseDir, 'non_existent_osu_dir_xyz') });
-      },
-      /Директория Songs не найдена/
-    );
+    await assert.rejects(async () => {
+      await saveSettings({ osuPath: path.join(tempBaseDir, 'non_existent_osu_dir_xyz') });
+    }, /Директория Songs не найдена/);
   });
 
   test('handlePostDownload: режим move перемещает .osz в Songs', async () => {
@@ -730,9 +716,7 @@ describe('Интеграция с локальной директорией osu!
 
       const mockJob = {
         id: 'job_test_extract',
-        mapsById: new Map([
-          [setId, { artist: 'Camellia', title: 'GHOST' }],
-        ]),
+        mapsById: new Map([[setId, { artist: 'Camellia', title: 'GHOST' }]]),
       };
 
       await handlePostDownload(setId, mockJob);
@@ -771,20 +755,19 @@ describe('Интеграция с локальной директорией osu!
 
       const mockJob = {
         id: 'job_test_corrupt_extract',
-        mapsById: new Map([
-          [setId, { artist: 'Broken', title: 'Song' }],
-        ]),
+        mapsById: new Map([[setId, { artist: 'Broken', title: 'Song' }]]),
       };
 
-      await assert.rejects(
-        async () => {
-          await handlePostDownload(setId, mockJob);
-        },
-        /контрольной суммы CRC32/
-      );
+      await assert.rejects(async () => {
+        await handlePostDownload(setId, mockJob);
+      }, /контрольной суммы CRC32/);
 
       const targetFolder = path.join(mockSongsDir, '88004 Broken - Song');
-      assert.equal(fs.existsSync(targetFolder), false, 'Папка карты НЕ должна быть создана в Songs при ошибке распаковки');
+      assert.equal(
+        fs.existsSync(targetFolder),
+        false,
+        'Папка карты НЕ должна быть создана в Songs при ошибке распаковки',
+      );
       assert.equal(isSetInOsuSongs(setId), false, 'Набор НЕ должен помечаться как установленный в osu!');
       assert.equal(fs.existsSync(oszPath), true, 'Исходный .osz не должен удаляться при ошибке');
 
@@ -868,7 +851,7 @@ describe('Интеграция с локальной директорией osu!
       // Даем циклу запуститься
       for (let i = 0; i < 20; i++) {
         if (job.status === 'finished') break;
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 50));
       }
 
       assert.equal(job.status, 'finished');
@@ -919,7 +902,7 @@ describe('Интеграция с локальной директорией osu!
 
       for (let i = 0; i < 20; i++) {
         if (job.status === 'finished') break;
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 50));
       }
 
       assert.equal(job.status, 'finished');
@@ -943,7 +926,7 @@ describe('Интеграция с локальной директорией osu!
     testServer = http.createServer((req, res) => {
       server.emit('request', req, res);
     });
-    await new Promise(r => testServer.listen({ port: 0, host: '127.0.0.1' }, () => r(null)));
+    await new Promise((r) => testServer.listen({ port: 0, host: '127.0.0.1' }, () => r(null)));
     testPort = /** @type {import('node:net').AddressInfo} */ (testServer.address()).port;
 
     try {
@@ -1046,7 +1029,7 @@ describe('Интеграция с локальной директорией osu!
       const browseGetBody = await browseGetRes.json();
       assert.equal('cancelled' in browseGetBody, true);
     } finally {
-      await new Promise(r => testServer.close(r));
+      await new Promise((r) => testServer.close(r));
       if (originalDownloads !== undefined) process.env.DOWNLOADS_DIR = originalDownloads;
       else delete process.env.DOWNLOADS_DIR;
     }
@@ -1076,10 +1059,7 @@ describe('Интеграция с локальной директорией osu!
       await fs.promises.writeFile(zipPath, emptyZip);
       const outDir = path.join(tempBaseDir, 'out_empty');
 
-      await assert.rejects(
-        () => extractZip(zipPath, outDir),
-        /архив пуст/
-      );
+      await assert.rejects(() => extractZip(zipPath, outDir), /архив пуст/);
       assert.equal(fs.existsSync(outDir), false);
     });
 
@@ -1097,7 +1077,7 @@ describe('Интеграция с локальной директорией osu!
       // Передаём maxFiles: 10 при 15 файлах в архиве
       await assert.rejects(
         () => extractZip(zipPath, outDir, { maxFiles: 10 }),
-        /количество файлов \(15\) превышает лимит \(10\)/
+        /количество файлов \(15\) превышает лимит \(10\)/,
       );
       assert.equal(fs.existsSync(outDir), false);
     });
@@ -1112,7 +1092,7 @@ describe('Интеграция с локальной директорией osu!
 
       await assert.rejects(
         () => extractZip(zipPath, outDir, { maxUncompressedBytes: 100 * 1024 * 1024 }),
-        /Превышен максимальный суммарный размер распакованных данных/
+        /Превышен максимальный суммарный размер распакованных данных/,
       );
       assert.equal(fs.existsSync(outDir), false);
     });
@@ -1128,7 +1108,7 @@ describe('Интеграция с локальной директорией osu!
 
       await assert.rejects(
         () => extractZip(zipPath, outDir, { maxCompressionRatio: 100 }),
-        /Подозрительно высокая степень сжатия файла/
+        /Подозрительно высокая степень сжатия файла/,
       );
       assert.equal(fs.existsSync(outDir), false);
     });
@@ -1145,7 +1125,7 @@ describe('Интеграция с локальной директорией osu!
 
       await assert.rejects(
         () => extractZip(zipPath, outDir, { validateBeatmap: true }),
-        /архив не содержит файлов карт \(\.osu\)/
+        /архив не содержит файлов карт \(\.osu\)/,
       );
       assert.equal(fs.existsSync(outDir), false);
     });
@@ -1160,7 +1140,7 @@ describe('Интеграция с локальной директорией osu!
 
       await assert.rejects(
         () => extractZip(zipPath, outDir, { validateBeatmap: true }),
-        /ни один файл \.osu не содержит валидного заголовка формата osu!/
+        /ни один файл \.osu не содержит валидного заголовка формата osu!/,
       );
       assert.equal(fs.existsSync(outDir), false);
     });
@@ -1175,7 +1155,7 @@ describe('Интеграция с локальной директорией osu!
 
       await assert.rejects(
         () => extractZip(zipPath, outDir, { validateBeatmap: true, expectedSetId: 11111 }),
-        /Несоответствие BeatmapSetID: архив содержит карты для набора \(99999\), ожидался 11111/
+        /Несоответствие BeatmapSetID: архив содержит карты для набора \(99999\), ожидался 11111/,
       );
       assert.equal(fs.existsSync(outDir), false);
     });

@@ -1,18 +1,11 @@
 // @ts-check
-"use strict";
+'use strict';
 
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const {
-  isPrivateIp,
-  mirrorRedirectAllowed,
-  createPinnedLookup,
-} = require('../lib/security.js');
-const {
-  safeDownloadFetch,
-  downloadSet,
-} = require('../lib/downloader.js');
+const { isPrivateIp, mirrorRedirectAllowed, createPinnedLookup } = require('../lib/security.js');
+const { safeDownloadFetch, downloadSet } = require('../lib/downloader.js');
 const { buildMirrorUrl } = require('../lib/config.js');
 
 describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и загрузчике карт', () => {
@@ -117,7 +110,7 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
         res.end();
       });
 
-      await new Promise(resolve => {
+      await new Promise((resolve) => {
         server.listen(0, '127.0.0.1', () => {
           const address = server.address();
           if (address && typeof address === 'object') {
@@ -129,7 +122,7 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
     });
 
     after(async () => {
-      await new Promise(resolve => server.close(resolve));
+      await new Promise((resolve) => server.close(resolve));
     });
 
     test('downloadSet блокирует небезопасный редирект зеркала на приватный хост', async () => {
@@ -146,12 +139,9 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
         errorsById: new Map(),
       };
 
-      await assert.rejects(
-        async () => {
-          await downloadSet(99999, { kind: 'mirror', mirror }, mockJob);
-        },
-        /Зеркало перенаправило на небезопасный URL/
-      );
+      await assert.rejects(async () => {
+        await downloadSet(99999, { kind: 'mirror', mirror }, mockJob);
+      }, /Зеркало перенаправило на небезопасный URL/);
     });
 
     test('downloadSet отклоняет редирект с пустым заголовком Location', async () => {
@@ -168,12 +158,9 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
         errorsById: new Map(),
       };
 
-      await assert.rejects(
-        async () => {
-          await downloadSet(99998, { kind: 'mirror', mirror }, mockJob);
-        },
-        /Сервер загрузки вернул пустое перенаправление/
-      );
+      await assert.rejects(async () => {
+        await downloadSet(99998, { kind: 'mirror', mirror }, mockJob);
+      }, /Сервер загрузки вернул пустое перенаправление/);
     });
   });
 });

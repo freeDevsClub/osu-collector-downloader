@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -12,11 +12,7 @@ const {
   COLLECTION_CACHE_DEGRADED_TTL_MS,
   populateMetadataInBackground,
 } = require('../lib/collector.js');
-const {
-  PORT,
-  PAGINATION_PAGE_LIMIT,
-  MAPSET_FETCH_BUDGET_MS,
-} = require('../lib/config.js');
+const { PORT, PAGINATION_PAGE_LIMIT, MAPSET_FETCH_BUDGET_MS } = require('../lib/config.js');
 const { safeJobForClient } = require('../lib/jobs.js');
 
 describe('Мгновенный старт и ленивая подгрузка названий (Instant Start & Lazy Metadata)', () => {
@@ -26,13 +22,13 @@ describe('Мгновенный старт и ленивая подгрузка �
 
   before(async () => {
     serverInstance = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => serverInstance.once('listening', resolve));
+    await new Promise((resolve) => serverInstance.once('listening', resolve));
     serverPort = /** @type {import('node:net').AddressInfo} */ (serverInstance.address()).port;
   });
 
   after(async () => {
     globalThis.fetch = originalFetch;
-    await new Promise(resolve => serverInstance.close(resolve));
+    await new Promise((resolve) => serverInstance.close(resolve));
   });
 
   beforeEach(() => {
@@ -43,7 +39,7 @@ describe('Мгновенный старт и ленивая подгрузка �
     /** @type {(value?: any) => void} */
     let resolveBeatmapsV2 = () => {};
     let beatmapsV2Resolved = false;
-    const beatmapsV2Promise = new Promise(resolve => {
+    const beatmapsV2Promise = new Promise((resolve) => {
       resolveBeatmapsV2 = () => {
         beatmapsV2Resolved = true;
         resolve();
@@ -68,7 +64,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             ],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99001')) {
@@ -80,7 +76,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmapCount: 2,
             beatmapsets: [{ id: 101 }, { id: 102 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -122,7 +118,7 @@ describe('Мгновенный старт и ленивая подгрузка �
   it('job.mapsById автоматически отражает названия по мере фонового обогащения', async () => {
     /** @type {(value?: any) => void} */
     let resolveBeatmaps = () => {};
-    const beatmapsBarrier = new Promise(resolve => {
+    const beatmapsBarrier = new Promise((resolve) => {
       resolveBeatmaps = resolve;
     });
 
@@ -140,7 +136,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             ],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99002')) {
@@ -152,7 +148,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmapCount: 1,
             beatmapsets: [{ id: 201 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -205,7 +201,7 @@ describe('Мгновенный старт и ленивая подгрузка �
   it('HTTP API POST /api/collections и GET /api/collections/:id отдают статус метаданных', async () => {
     /** @type {(value?: any) => void} */
     let resolvePaging = () => {};
-    const pagingGate = new Promise(resolve => {
+    const pagingGate = new Promise((resolve) => {
       resolvePaging = resolve;
     });
 
@@ -223,7 +219,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             ],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99003')) {
@@ -235,7 +231,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmapCount: 1,
             beatmapsets: [{ id: 301 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -300,7 +296,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmapCount: 1,
             beatmapsets: [{ id: 401 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -332,13 +328,13 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmaps: [{ beatmapset_id: 501, beatmapset: { title: 'Complete Song', artist: 'Artist 5' } }],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99005')) {
         return new Response(
           JSON.stringify({ id: 99005, name: 'Complete Coll', beatmapCount: 1, beatmapsets: [{ id: 501 }] }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99006/beatmapsV2')) {
@@ -348,13 +344,13 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmaps: [{ beatmapset_id: 601, beatmapset: { title: 'Partial Song', artist: 'Artist 6' } }],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99006')) {
         return new Response(
           JSON.stringify({ id: 99006, name: 'Partial Coll', beatmapCount: 2, beatmapsets: [{ id: 601 }, { id: 602 }] }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -423,13 +419,13 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmaps: [{ beatmapset_id: 701, beatmapset: { title: 'Recovered Song', artist: 'Artist 7' } }],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99007')) {
         return new Response(
           JSON.stringify({ id: 99007, name: 'Recovery Coll', beatmapCount: 1, beatmapsets: [{ id: 701 }] }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -460,7 +456,11 @@ describe('Мгновенный старт и ленивая подгрузка �
   it('дефолтные лимиты метаданных соответствуют увеличенным значениям для крупных коллекций', () => {
     assert.ok(PAGINATION_PAGE_LIMIT >= 250, 'PAGINATION_PAGE_LIMIT по умолчанию должен быть не менее 250');
     assert.ok(MAPSET_FETCH_BUDGET_MS >= 60000, 'MAPSET_FETCH_BUDGET_MS по умолчанию должен быть не менее 60000');
-    assert.equal(COLLECTION_CACHE_DEGRADED_TTL_MS, 2 * 60 * 1000, 'COLLECTION_CACHE_DEGRADED_TTL_MS должен быть 2 минуты');
+    assert.equal(
+      COLLECTION_CACHE_DEGRADED_TTL_MS,
+      2 * 60 * 1000,
+      'COLLECTION_CACHE_DEGRADED_TTL_MS должен быть 2 минуты',
+    );
     assert.equal(COLLECTION_CACHE_TTL_MS, 10 * 60 * 1000, 'COLLECTION_CACHE_TTL_MS должен быть 10 минут');
   });
 
@@ -479,7 +479,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmapCount: 1,
             beatmapsets: [{ id: 801 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -536,7 +536,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             ],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99009')) {
@@ -548,7 +548,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             // В сыром заголовке порядок хаотичный (300, 100, 200)
             beatmapsets: [{ id: 300 }, { id: 100 }, { id: 200 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -581,7 +581,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmaps: [{ beatmapset_id: 500, beatmapset: { title: 'Available Song', artist: 'Artist 5' } }],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99010')) {
@@ -593,7 +593,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             // В коллекции 2 набора: 500 и 999 (999 удалён или отсутствует в V2)
             beatmapsets: [{ id: 999 }, { id: 500 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -623,7 +623,7 @@ describe('Мгновенный старт и ленивая подгрузка �
 
     /** @type {(value?: any) => void} */
     let resolvePaging = () => {};
-    const pagingGate = new Promise(resolve => {
+    const pagingGate = new Promise((resolve) => {
       resolvePaging = resolve;
     });
 
@@ -639,7 +639,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             ],
             hasMore: false,
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       if (url.includes('/api/collections/99011')) {
@@ -650,7 +650,7 @@ describe('Мгновенный старт и ленивая подгрузка �
             beatmapCount: 3,
             beatmapsets: [{ id: 1101 }, { id: 1102 }, { id: 1103 }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -717,9 +717,12 @@ describe('Мгновенный старт и ленивая подгрузка �
       assert.equal(classifyCalls, 1, 'poll=1 не должен вызывать classifyCollectionSets');
 
       // 6. Повторный поллинг с актуальным since=2: новых карт нет, maps пустой
-      const pollResUpToDate = await originalFetch(`http://127.0.0.1:${serverPort}/api/collections/99011?poll=1&since=2`, {
-        headers: localHeaders,
-      });
+      const pollResUpToDate = await originalFetch(
+        `http://127.0.0.1:${serverPort}/api/collections/99011?poll=1&since=2`,
+        {
+          headers: localHeaders,
+        },
+      );
       assert.equal(pollResUpToDate.status, 200);
       const pollDataUpToDate = await pollResUpToDate.json();
       assert.deepEqual(pollDataUpToDate.maps, [], 'при since=2 отдаётся пустой массив maps');

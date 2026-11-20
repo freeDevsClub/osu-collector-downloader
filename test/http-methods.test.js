@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -14,13 +14,13 @@ describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn
 
   before(async () => {
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
   });
 
   after(async () => {
     if (appServer) {
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
   });
 
@@ -47,9 +47,11 @@ describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn
             ...headers,
           },
         },
-        res => {
+        (res) => {
           let data = '';
-          res.on('data', chunk => { data += chunk; });
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
           res.on('end', () => {
             let jsonBody = null;
             try {
@@ -62,7 +64,7 @@ describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn
               rawText: data,
             });
           });
-        }
+        },
       );
       req.on('error', reject);
       if (body) req.write(body);
@@ -190,11 +192,11 @@ describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn
       assert.equal(res.body?.error, 'Нет активной загрузки.');
 
       // Даём завершиться событию finish
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Убеждаемся, что среди warn-логов нет события http.request.completed для /api/downloads/active
-      const activeWarn = warnLogs.find(logStr =>
-        logStr.includes('http.request.completed') && logStr.includes('/api/downloads/active')
+      const activeWarn = warnLogs.find(
+        (logStr) => logStr.includes('http.request.completed') && logStr.includes('/api/downloads/active'),
       );
       assert.equal(activeWarn, undefined, 'GET /api/downloads/active не должен создавать warn-лог при штатном 404');
     } finally {

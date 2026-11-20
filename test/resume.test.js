@@ -1,5 +1,5 @@
 // @ts-check
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -8,13 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const {
-  jobs,
-  getActiveJob,
-  setActiveJob,
-  safeJobForClient,
-  jobCounters,
-} = require('../lib/jobs.js');
+const { jobs, getActiveJob, setActiveJob, safeJobForClient, jobCounters } = require('../lib/jobs.js');
 
 const { server } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
@@ -52,27 +46,29 @@ describe('Возобновление paused-задачи и обновление
       });
       res.end(validZipBuffer);
     });
-    await new Promise(r => mockMirrorServer.listen(0, '127.0.0.1', r));
+    await new Promise((r) => mockMirrorServer.listen(0, '127.0.0.1', r));
     mockMirrorPort = /** @type {import('node:net').AddressInfo} */ (mockMirrorServer.address()).port;
 
-    setMirrorsForTest([{
-      id: 'mock_resume_mirror',
-      label: 'Mock Resume Mirror',
-      build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
-    }]);
+    setMirrorsForTest([
+      {
+        id: 'mock_resume_mirror',
+        label: 'Mock Resume Mirror',
+        build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
+      },
+    ]);
 
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
   });
 
   after(async () => {
     resetMirrorsForTest();
     if (appServer) {
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
     if (mockMirrorServer) {
-      await new Promise(resolve => mockMirrorServer.close(resolve));
+      await new Promise((resolve) => mockMirrorServer.close(resolve));
     }
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -129,7 +125,7 @@ describe('Возобновление paused-задачи и обновление
 
     // Дожидаемся завершения возобновлённой задачи
     while (['queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
 
     assert.equal(job.status, 'finished');
@@ -173,7 +169,7 @@ describe('Возобновление paused-задачи и обновление
     assert.equal(job.noVideo, true);
 
     while (['queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
     assert.equal(job.status, 'finished');
   });
@@ -213,7 +209,7 @@ describe('Возобновление paused-задачи и обновление
     assert.equal(job.noVideo, false);
 
     while (['queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
     assert.equal(job.status, 'finished');
   });

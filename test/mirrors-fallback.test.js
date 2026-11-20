@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -43,7 +43,7 @@ describe('Интеграционные тесты fallback между зерка
       res.writeHead(429, { 'Retry-After': '60', 'Content-Type': 'text/plain' });
       res.end('Rate limited');
     });
-    await new Promise(r => s1.listen(0, '127.0.0.1', r));
+    await new Promise((r) => s1.listen(0, '127.0.0.1', r));
     port1 = /** @type {import('node:net').AddressInfo} */ (s1.address()).port;
 
     // Зеркало 2: всегда 500 (временный сбой)
@@ -51,7 +51,7 @@ describe('Интеграционные тесты fallback между зерка
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Internal Server Error');
     });
-    await new Promise(r => s2.listen(0, '127.0.0.1', r));
+    await new Promise((r) => s2.listen(0, '127.0.0.1', r));
     port2 = /** @type {import('node:net').AddressInfo} */ (s2.address()).port;
 
     // Зеркало 3: всегда 200 с валидным ZIP
@@ -62,7 +62,7 @@ describe('Интеграционные тесты fallback между зерка
       });
       res.end(validZipBuffer);
     });
-    await new Promise(r => s3.listen(0, '127.0.0.1', r));
+    await new Promise((r) => s3.listen(0, '127.0.0.1', r));
     port3 = /** @type {import('node:net').AddressInfo} */ (s3.address()).port;
 
     resetMirrorsForTest();
@@ -71,9 +71,9 @@ describe('Интеграционные тесты fallback между зерка
   after(async () => {
     resetMirrorsForTest();
     await Promise.all([
-      new Promise(r => s1.close(r)),
-      new Promise(r => s2.close(r)),
-      new Promise(r => s3.close(r)),
+      new Promise((r) => s1.close(r)),
+      new Promise((r) => s2.close(r)),
+      new Promise((r) => s3.close(r)),
     ]);
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -82,9 +82,9 @@ describe('Интеграционные тесты fallback между зерка
 
   it('успешно переключается с 429 и 500 на работающее 3-е зеркало', async () => {
     setMirrorsForTest([
-      { id: 'm1_429', label: 'Mirror 1 (429)', build: id => `http://127.0.0.1:${port1}/d/${id}` },
-      { id: 'm2_500', label: 'Mirror 2 (500)', build: id => `http://127.0.0.1:${port2}/d/${id}` },
-      { id: 'm3_200', label: 'Mirror 3 (200)', build: id => `http://127.0.0.1:${port3}/d/${id}` }
+      { id: 'm1_429', label: 'Mirror 1 (429)', build: (id) => `http://127.0.0.1:${port1}/d/${id}` },
+      { id: 'm2_500', label: 'Mirror 2 (500)', build: (id) => `http://127.0.0.1:${port2}/d/${id}` },
+      { id: 'm3_200', label: 'Mirror 3 (200)', build: (id) => `http://127.0.0.1:${port3}/d/${id}` },
     ]);
 
     const job = {
@@ -124,13 +124,13 @@ describe('Интеграционные тесты fallback между зерка
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not Found');
     });
-    await new Promise(r => s404.listen(0, '127.0.0.1', () => r(null)));
+    await new Promise((r) => s404.listen(0, '127.0.0.1', () => r(null)));
     const addr = /** @type {import('node:net').AddressInfo} */ (s404.address());
     const port404 = addr.port;
 
     setMirrorsForTest([
-      { id: 'm_404_a', label: 'Mirror 404 A', build: id => `http://127.0.0.1:${port404}/d/${id}` },
-      { id: 'm_404_b', label: 'Mirror 404 B', build: id => `http://127.0.0.1:${port404}/d/${id}` }
+      { id: 'm_404_a', label: 'Mirror 404 A', build: (id) => `http://127.0.0.1:${port404}/d/${id}` },
+      { id: 'm_404_b', label: 'Mirror 404 B', build: (id) => `http://127.0.0.1:${port404}/d/${id}` },
     ]);
 
     const job = {
@@ -143,19 +143,18 @@ describe('Интеграционные тесты fallback между зерка
     };
 
     try {
-      await assert.rejects(
-        async () => { await downloadFromMirrors(99902, job); },
-        /набора нет ни на одном зеркале \(404\)/
-      );
+      await assert.rejects(async () => {
+        await downloadFromMirrors(99902, job);
+      }, /набора нет ни на одном зеркале \(404\)/);
     } finally {
-      await new Promise(r => s404.close(r));
+      await new Promise((r) => s404.close(r));
     }
   });
 
   it('ставит на паузу (allCooldown), если все зеркала возвращают 429', async () => {
     setMirrorsForTest([
-      { id: 'm_429_a', label: 'Mirror 429 A', build: id => `http://127.0.0.1:${port1}/d/${id}` },
-      { id: 'm_429_b', label: 'Mirror 429 B', build: id => `http://127.0.0.1:${port1}/d/${id}` }
+      { id: 'm_429_a', label: 'Mirror 429 A', build: (id) => `http://127.0.0.1:${port1}/d/${id}` },
+      { id: 'm_429_b', label: 'Mirror 429 B', build: (id) => `http://127.0.0.1:${port1}/d/${id}` },
     ]);
 
     const job = {
@@ -167,12 +166,14 @@ describe('Интеграционные тесты fallback между зерка
     };
 
     await assert.rejects(
-      async () => { await downloadFromMirrors(99903, job); },
+      async () => {
+        await downloadFromMirrors(99903, job);
+      },
       (err) => {
         const e = /** @type {any} */ (err);
         assert.ok(e.allCooldown === true, 'Ошибка должна содержать allCooldown: true');
         return true;
-      }
+      },
     );
 
     assert.ok(mirrorCooldowns.has('m_429_a'));
@@ -191,11 +192,15 @@ describe('Интеграционные тесты fallback между зерка
         res.writeHead(429, { 'Content-Type': 'text/plain' });
         res.end('Rate Limited Without Header');
       });
-      await new Promise(r => s429NoHeader.listen(0, '127.0.0.1', () => r(null)));
+      await new Promise((r) => s429NoHeader.listen(0, '127.0.0.1', () => r(null)));
       const port429NoHeader = /** @type {import('node:net').AddressInfo} */ (s429NoHeader.address()).port;
 
       setMirrorsForTest([
-        { id: 'm_dyn_default', label: 'Mirror Dynamic Default', build: id => `http://127.0.0.1:${port429NoHeader}/d/${id}` }
+        {
+          id: 'm_dyn_default',
+          label: 'Mirror Dynamic Default',
+          build: (id) => `http://127.0.0.1:${port429NoHeader}/d/${id}`,
+        },
       ]);
 
       const job = {
@@ -208,11 +213,13 @@ describe('Интеграционные тесты fallback между зерка
 
       const start = Date.now();
       await assert.rejects(
-        async () => { await downloadFromMirrors(99904, job); },
+        async () => {
+          await downloadFromMirrors(99904, job);
+        },
         (err) => {
           const e = /** @type {any} */ (err);
           return e.allCooldown === true;
-        }
+        },
       );
 
       assert.ok(mirrorCooldowns.has('m_dyn_default'));
@@ -221,7 +228,7 @@ describe('Интеграционные тесты fallback между зерка
       // Должно быть около 2500 мс (с небольшим допуском), а не захардкоженные 60 000 мс!
       assert.ok(cooldownMs >= 2000 && cooldownMs <= 3500, `Ожидался кулдаун ~2500мс, фактически: ${cooldownMs}мс`);
 
-      await new Promise(r => s429NoHeader.close(r));
+      await new Promise((r) => s429NoHeader.close(r));
     } finally {
       if (prevDefault !== undefined) process.env.MIRROR_COOLDOWN_DEFAULT_MS = prevDefault;
       else delete process.env.MIRROR_COOLDOWN_DEFAULT_MS;
@@ -236,7 +243,7 @@ describe('Интеграционные тесты fallback между зерка
       // 1. Лимит ожидания 1000 мс: кулдаун 4000 мс превышает лимит -> не ждём в цикле, сразу allCooldown
       process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = '1000';
       setMirrorsForTest([
-        { id: 'm_wait_test', label: 'Wait Test Mirror', build: id => `http://127.0.0.1:${port3}/d/${id}` }
+        { id: 'm_wait_test', label: 'Wait Test Mirror', build: (id) => `http://127.0.0.1:${port3}/d/${id}` },
       ]);
       mirrorCooldowns.set('m_wait_test', Date.now() + 4000);
 
@@ -250,11 +257,13 @@ describe('Интеграционные тесты fallback между зерка
 
       const start = Date.now();
       await assert.rejects(
-        async () => { await downloadFromMirrors(99905, job); },
+        async () => {
+          await downloadFromMirrors(99905, job);
+        },
         (err) => {
           const e = /** @type {any} */ (err);
           return e.allCooldown === true;
-        }
+        },
       );
       const elapsed = Date.now() - start;
       assert.ok(elapsed < 500, `Не должно ждать 4 секунды, если лимит ожидания 1000мс. Заняло ${elapsed}мс`);

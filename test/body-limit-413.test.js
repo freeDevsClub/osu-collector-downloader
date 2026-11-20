@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,13 +16,13 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
 
   before(async () => {
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
   });
 
   after(async () => {
     if (appServer) {
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
   });
 
@@ -42,7 +42,7 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
           assert.equal(err.status, 400);
           assert.match(err.message, /Некорректный JSON/);
           return true;
-        }
+        },
       );
     });
 
@@ -55,7 +55,7 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
           assert.equal(err.status, 400);
           assert.match(err.message, /Ожидался JSON-объект/);
           return true;
-        }
+        },
       );
 
       const streamNum = Readable.from(['12345']);
@@ -66,7 +66,7 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
           assert.equal(err.status, 400);
           assert.match(err.message, /Ожидался JSON-объект/);
           return true;
-        }
+        },
       );
     });
 
@@ -81,7 +81,7 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
           assert.equal(err.status, 413);
           assert.match(err.message, /Слишком большой запрос/);
           return true;
-        }
+        },
       );
 
       // Проверяем, что поток был корректно уничтожен
@@ -94,7 +94,7 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
         read() {
           readAttempted = true;
           this.push('some data');
-        }
+        },
       });
       // @ts-ignore
       stream.headers = { 'content-length': '5000000' };
@@ -105,7 +105,7 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
           assert.equal(err instanceof HttpError, true);
           assert.equal(err.status, 413);
           return true;
-        }
+        },
       );
 
       assert.equal(stream.destroyed, true);
@@ -131,19 +131,23 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
               'Content-Length': String(Buffer.byteLength(oversizedPayload)),
             },
           },
-          res => {
+          (res) => {
             let data = '';
-            res.on('data', chunk => { data += chunk; });
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
             res.on('end', () => {
               let body = null;
-              try { body = JSON.parse(data); } catch {}
+              try {
+                body = JSON.parse(data);
+              } catch {}
               resolve({
                 status: res.statusCode,
                 headers: res.headers,
                 body,
               });
             });
-          }
+          },
         );
         req.on('error', reject);
         req.write(oversizedPayload);
@@ -172,19 +176,23 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
               'Content-Length': String(Buffer.byteLength(oversizedPayload)),
             },
           },
-          res => {
+          (res) => {
             let data = '';
-            res.on('data', chunk => { data += chunk; });
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
             res.on('end', () => {
               let body = null;
-              try { body = JSON.parse(data); } catch {}
+              try {
+                body = JSON.parse(data);
+              } catch {}
               resolve({
                 status: res.statusCode,
                 headers: res.headers,
                 body,
               });
             });
-          }
+          },
         );
         req.on('error', reject);
         req.write(oversizedPayload);
@@ -214,19 +222,23 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
               'Content-Length': String(Buffer.byteLength(oversizedPayload)),
             },
           },
-          res => {
+          (res) => {
             let data = '';
-            res.on('data', chunk => { data += chunk; });
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
             res.on('end', () => {
               let body = null;
-              try { body = JSON.parse(data); } catch {}
+              try {
+                body = JSON.parse(data);
+              } catch {}
               resolve({
                 status: res.statusCode,
                 headers: res.headers,
                 body,
               });
             });
-          }
+          },
         );
         req.on('error', reject);
         req.write(oversizedPayload);
@@ -248,17 +260,17 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
           // Отправляем HTTP POST запрос с большим Content-Length
           client.write(
             `POST /api/osu/check HTTP/1.1\r\n` +
-            `Host: 127.0.0.1:${PORT}\r\n` +
-            `Content-Type: application/json\r\n` +
-            `Content-Length: ${totalBytes}\r\n` +
-            `\r\n`
+              `Host: 127.0.0.1:${PORT}\r\n` +
+              `Content-Type: application/json\r\n` +
+              `Content-Length: ${totalBytes}\r\n` +
+              `\r\n`,
           );
 
           // Шлём первый чанк, превышающий MAX_BODY
           client.write('{"setIds":[' + '1,'.repeat(Math.floor(MAX_BODY / 2)) + '1]}');
         });
 
-        client.on('data', chunk => {
+        client.on('data', (chunk) => {
           receivedData += chunk.toString('utf8');
         });
 
@@ -267,7 +279,7 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
           resolve(undefined);
         });
 
-        client.on('error', err => {
+        client.on('error', (err) => {
           // ECONNRESET или EPIPE допустимы при закрытии сервером сокета
           resolve(undefined);
         });

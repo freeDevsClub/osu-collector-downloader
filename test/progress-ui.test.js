@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
@@ -93,7 +93,9 @@ describe('Компактный UI прогресса и выпадающий с�
     let styleProps = {};
     const mockProgressBar = {
       style: {
-        setProperty: (k, v) => { styleProps[k] = v; },
+        setProperty: (k, v) => {
+          styleProps[k] = v;
+        },
       },
     };
     const mockProgressPercent = { textContent: '' };
@@ -107,8 +109,12 @@ describe('Компактный UI прогресса и выпадающий с�
     const mockTransfersList = {
       children: [],
       innerHTML: '',
-      replaceChildren: () => { mockTransfersList.children = []; },
-      appendChild: (el) => { mockTransfersList.children.push(el); },
+      replaceChildren: () => {
+        mockTransfersList.children = [];
+      },
+      appendChild: (el) => {
+        mockTransfersList.children.push(el);
+      },
     };
 
     /** @type {Record<string, any>} */
@@ -135,9 +141,14 @@ describe('Компактный UI прогресса и выпадающий с�
           textContent: '',
           title: '',
           style: {
-            setProperty: (k, v) => { el.style[k] = v; },
+            setProperty: (k, v) => {
+              el.style[k] = v;
+            },
           },
-          appendChild: (c) => { el.children = el.children || []; el.children.push(c); },
+          appendChild: (c) => {
+            el.children = el.children || [];
+            el.children.push(c);
+          },
         };
         createdElements.push(el);
         return el;

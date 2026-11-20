@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,18 +7,10 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const {
-  jobs,
-  getActiveJob,
-  setActiveJob,
-} = require('../lib/jobs.js');
-const {
-  collectionCache,
-} = require('../lib/collector.js');
+const { jobs, getActiveJob, setActiveJob } = require('../lib/jobs.js');
+const { collectionCache } = require('../lib/collector.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
-const {
-  server,
-} = require('../server.js');
+const { server } = require('../server.js');
 
 describe('Мгновенный ответ POST /api/downloads со статусом preparing и фоновая подготовка', () => {
   let appServer;
@@ -29,25 +21,12 @@ describe('Мгновенный ответ POST /api/downloads со статус�
   let mirrorPort;
 
   const validZipBuffer = Buffer.from([
-    0x50, 0x4b, 0x03, 0x04,
-    0x0a, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x21, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x04, 0x00, 0x00, 0x00,
-    0x74, 0x65, 0x73, 0x74,
-    0x50, 0x4b, 0x01, 0x02,
-    0x14, 0x03, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x21, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x74, 0x65, 0x73, 0x74,
-    0x50, 0x4b, 0x05, 0x06,
-    0x00, 0x00, 0x00, 0x00,
-    0x01, 0x00, 0x01, 0x00,
-    0x32, 0x00, 0x00, 0x00,
-    0x1e, 0x00, 0x00, 0x00,
-    0x00, 0x00,
+    0x50, 0x4b, 0x03, 0x04, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x74, 0x65, 0x73, 0x74, 0x50, 0x4b, 0x01, 0x02, 0x14, 0x03, 0x0a, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x74, 0x65, 0x73, 0x74, 0x50, 0x4b,
+    0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x32, 0x00, 0x00, 0x00, 0x1e, 0x00, 0x00, 0x00, 0x00,
+    0x00,
   ]);
 
   before(async () => {
@@ -63,18 +42,20 @@ describe('Мгновенный ответ POST /api/downloads со статус�
       res.end(validZipBuffer);
     });
     mirrorServer.listen(0, '127.0.0.1');
-    await new Promise(r => mirrorServer.once('listening', r));
+    await new Promise((r) => mirrorServer.once('listening', r));
     const mirrorAddr = /** @type {import('node:net').AddressInfo} */ (mirrorServer.address());
     mirrorPort = mirrorAddr.port;
 
-    setMirrorsForTest([{
-      id: 'mock_mirror',
-      label: 'Mock Mirror',
-      build: id => `http://127.0.0.1:${mirrorPort}/d/${id}`,
-    }]);
+    setMirrorsForTest([
+      {
+        id: 'mock_mirror',
+        label: 'Mock Mirror',
+        build: (id) => `http://127.0.0.1:${mirrorPort}/d/${id}`,
+      },
+    ]);
 
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     const appAddr = /** @type {import('node:net').AddressInfo} */ (appServer.address());
     appPort = appAddr.port;
 
@@ -85,10 +66,10 @@ describe('Мгновенный ответ POST /api/downloads со статус�
     resetMirrorsForTest();
     globalThis.fetch = originalFetch;
     if (appServer) {
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
     if (mirrorServer) {
-      await new Promise(resolve => mirrorServer.close(resolve));
+      await new Promise((resolve) => mirrorServer.close(resolve));
     }
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -110,7 +91,7 @@ describe('Мгновенный ответ POST /api/downloads со статус�
       const urlStr = String(input);
       if (urlStr.includes('/api/collections/55001')) {
         fetchStarted = true;
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 200));
         fetchCompleted = true;
         return new Response(
           JSON.stringify({
@@ -119,7 +100,7 @@ describe('Мгновенный ответ POST /api/downloads со статус�
             beatmapCount: 1,
             beatmapsets: [{ id: 5501, title: 'Test Map', artist: 'Artist' }],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -141,7 +122,10 @@ describe('Мгновенный ответ POST /api/downloads со статус�
 
     // Запрос должен ответить мгновенно, не блокируясь на ожидание 200мс загрузки коллекции
     assert.equal(fetchCompleted, false, 'Ответ 202 должен вернуться ДО завершения загрузки коллекции');
-    assert.ok(responseDuration < 150, `Ответ должен вернуться быстрее задержки osu!Collector (200мс), занял: ${responseDuration}мс`);
+    assert.ok(
+      responseDuration < 150,
+      `Ответ должен вернуться быстрее задержки osu!Collector (200мс), занял: ${responseDuration}мс`,
+    );
     assert.equal(data.status, 'preparing');
     assert.ok(data.id);
 
@@ -151,7 +135,7 @@ describe('Мгновенный ответ POST /api/downloads со статус�
 
     // Дожидаемся, пока фоновая подготовка загрузит коллекцию и завершит задачу
     while (['preparing', 'queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 10));
     }
 
     assert.equal(fetchCompleted, true, 'Коллекция должна была быть успешно загружена в фоне');
@@ -185,7 +169,7 @@ describe('Мгновенный ответ POST /api/downloads со статус�
     assert.ok(job);
 
     while (['preparing', 'queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 10));
     }
 
     assert.equal(job.status, 'finished_with_errors');
@@ -205,7 +189,7 @@ describe('Мгновенный ответ POST /api/downloads со статус�
             beatmapCount: 0,
             beatmapsets: [],
           }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
       return originalFetch(input, init);
@@ -228,7 +212,7 @@ describe('Мгновенный ответ POST /api/downloads со статус�
     assert.ok(job);
 
     while (['preparing', 'queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 10));
     }
 
     assert.equal(job.status, 'finished_with_errors');

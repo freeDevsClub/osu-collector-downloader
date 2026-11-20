@@ -1,16 +1,10 @@
 // @ts-check
-"use strict";
+'use strict';
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const {
-  Job,
-  JobStateMachine,
-  JOB_STATUSES,
-  VALID_JOB_TRANSITIONS,
-  createJob,
-} = require('../lib/job.js');
+const { Job, JobStateMachine, JOB_STATUSES, VALID_JOB_TRANSITIONS, createJob } = require('../lib/job.js');
 const { serializeJob, deserializeJob } = require('../lib/jobs.js');
 
 describe('Нормализация сущности Job и машина состояний (Job State Machine)', () => {
@@ -78,7 +72,7 @@ describe('Нормализация сущности Job и машина сост
     assert.throws(
       // @ts-ignore
       () => new Job({ status: 'unknown_status' }),
-      /Недопустимый начальный статус задачи: «unknown_status»/
+      /Недопустимый начальный статус задачи: «unknown_status»/,
     );
   });
 
@@ -202,15 +196,15 @@ describe('Нормализация сущности Job и машина сост
 
     assert.throws(
       // @ts-ignore
-      () => { job.status = 'preparing'; },
-      /Недопустимый переход состояния задачи .* «running» → «preparing»/
+      () => {
+        job.status = 'preparing';
+      },
+      /Недопустимый переход состояния задачи .* «running» → «preparing»/,
     );
 
-    assert.throws(
-      // @ts-ignore
-      () => { job.status = 'invalid_bogus_status'; },
-      /Неизвестный статус задачи: «invalid_bogus_status»/
-    );
+    assert.throws(() => {
+      /** @type {any} */ (job).status = 'invalid_bogus_status';
+    }, /Неизвестный статус задачи: «invalid_bogus_status»/);
   });
 
   it('для отмененной задачи (cancelled) попытки перевода в другие статусы безопасно игнорируются', () => {

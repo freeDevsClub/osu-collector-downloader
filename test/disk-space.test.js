@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -165,7 +165,7 @@ describe('Оценка и проверка свободного места на 
         assert.equal(err.httpStatus, 507);
         assert.match(err.message, /мало места/);
         return true;
-      }
+      },
     );
   });
 

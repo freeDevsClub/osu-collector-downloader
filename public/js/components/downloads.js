@@ -1,7 +1,7 @@
 // @ts-check
 import { byId, toAny, formatBytes, setStatus, notify } from '../utils.js';
 import { api, isSessionConnected } from '../api.js';
-import { updateMirrorsFromData, loadMirrors } from './mirrors.js';
+import { updateMirrorsFromData } from './mirrors.js';
 import { getCollection, collectionPayload } from './collection.js';
 
 export const JOB_STORAGE_KEY = 'osu-collector-downloader.jobId';
@@ -47,14 +47,14 @@ export function setLastJobId(id) {
 }
 
 function getMethodInputs() {
-  return (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
+  return typeof document !== 'undefined' && typeof document.querySelectorAll === 'function'
     ? /** @type {HTMLInputElement[]} */ ([...document.querySelectorAll('input[name="download-method"]')])
     : [];
 }
 
 export function selectedMethod() {
   const methodInputs = getMethodInputs();
-  const value = methodInputs.find(input => input.checked)?.value;
+  const value = methodInputs.find((input) => input.checked)?.value;
   return value === 'session' ? 'session' : 'mirror';
 }
 
@@ -85,7 +85,7 @@ export function updateDownloadButton(coll, connected) {
   if (checkboxNoVideo) {
     checkboxNoVideo.disabled = Boolean(activeJob);
   }
-  methodInputs.forEach(input => {
+  methodInputs.forEach((input) => {
     input.disabled = Boolean(activeJob);
     const option = byId(`option-${input.value}`);
     option?.classList.toggle('selected', input.checked);
@@ -127,7 +127,9 @@ export function stopPolling() {
  */
 export function scheduleNextPoll(delay = POLL_INTERVAL_MS, callbacks = {}) {
   stopPolling();
-  pollTimer = setTimeout(() => { void pollJob(callbacks); }, delay);
+  pollTimer = setTimeout(() => {
+    void pollJob(callbacks);
+  }, delay);
 }
 
 /**
@@ -158,7 +160,7 @@ export function startJobPolling(id, callbacks = {}) {
       const es = new EventSource(`/api/downloads/${id}/events`);
       jobEventSource = es;
 
-      es.onmessage = event => {
+      es.onmessage = (event) => {
         try {
           const job = JSON.parse(event.data);
           pollFailures = 0;
@@ -238,13 +240,21 @@ export async function pollJob(callbacks = {}) {
     if (pollFailures < POLL_MAX_FAILURES - 1) {
       // Один сбой опроса — не конец задачи: сервер продолжает скачивание, просто плохой ответ.
       pollFailures += 1;
-      setStatus(downloadStatus, `Временный сбой связи (${error.message}) — задача на сервере продолжается, повторяю опрос…`, 'warn');
+      setStatus(
+        downloadStatus,
+        `Временный сбой связи (${error.message}) — задача на сервере продолжается, повторяю опрос…`,
+        'warn',
+      );
       scheduleNextPoll(POLL_INTERVAL_MS, callbacks);
     } else {
       stopPolling();
       if (cancelButton) cancelButton.hidden = true;
       if (resumeButton) resumeButton.hidden = true;
-      setStatus(downloadStatus, `Связь с локальным сервером потеряна (${error.message}). Задача на сервере может продолжать работу — обновите страницу (F5) после восстановления связи.`, 'error');
+      setStatus(
+        downloadStatus,
+        `Связь с локальным сервером потеряна (${error.message}). Задача на сервере может продолжать работу — обновите страницу (F5) после восстановления связи.`,
+        'error',
+      );
       updateDownloadButton();
     }
   } finally {
@@ -258,7 +268,7 @@ export async function pollJob(callbacks = {}) {
 export function updateJob(job) {
   if (job?.id) lastJobId = job.id;
   if (Array.isArray(job.mirrors)) {
-    const mirrorsSig = job.mirrors.map(m => `${m.id}:${m.cooldownMs > 0 ? 1 : 0}`).join('|');
+    const mirrorsSig = job.mirrors.map((m) => `${m.id}:${m.cooldownMs > 0 ? 1 : 0}`).join('|');
     if (mirrorsSig !== lastMirrorsSignature) {
       lastMirrorsSignature = mirrorsSig;
       updateMirrorsFromData(job.mirrors);
@@ -272,7 +282,7 @@ export function updateJob(job) {
 
   const methodInputs = getMethodInputs();
   if (job?.method && activeJob) {
-    const targetInput = methodInputs.find(input => input.value === job.method);
+    const targetInput = methodInputs.find((input) => input.value === job.method);
     if (targetInput && !targetInput.checked) {
       targetInput.checked = true;
       updateDownloadButton();
@@ -282,7 +292,7 @@ export function updateJob(job) {
   const retryFailedButton = /** @type {HTMLButtonElement | null} */ (byId('retry-failed-button'));
   if (retryFailedButton) {
     const isRunning = ['preparing', 'queued', 'running'].includes(job.status);
-    const canRetry = Boolean(!isRunning && (job.canRetryFailed ?? (job.failed > 0)));
+    const canRetry = Boolean(!isRunning && (job.canRetryFailed ?? job.failed > 0));
     retryFailedButton.hidden = !canRetry;
     if (canRetry) {
       retryFailedButton.textContent = job.failed ? `Повторить ошибки (${job.failed})` : 'Повторить ошибки';
@@ -290,7 +300,7 @@ export function updateJob(job) {
   }
 
   const total = job.total || 0;
-  const percent = total ? Math.round(job.completed / total * 100) : 0;
+  const percent = total ? Math.round((job.completed / total) * 100) : 0;
   const currentPercent = Number.isFinite(job.currentPercent) ? job.currentPercent : null;
 
   const progressBarEl = byId('progress-bar');
@@ -310,7 +320,8 @@ export function updateJob(job) {
     else if (job.status === 'finished_with_errors') statusPrefix = 'Завершено с ошибками ·';
     else if (job.status === 'cancelled') statusPrefix = 'Остановлено ·';
 
-    progressLabelEl.textContent = total > 0 ? `${statusPrefix} ${job.completed} из ${total}` : (job.message || statusPrefix);
+    progressLabelEl.textContent =
+      total > 0 ? `${statusPrefix} ${job.completed} из ${total}` : job.message || statusPrefix;
   }
 
   // Обновление выпадающего списка активных параллельных загрузок
@@ -319,21 +330,25 @@ export function updateJob(job) {
   const transfersDetailsEl = /** @type {HTMLDetailsElement | null} */ (byId('transfers-details'));
 
   /** @type {Array<{ setId?: number, setName?: string, mirror?: string, bytes?: number, totalBytes?: number | null, percent?: number | null }>} */
-  const activeTransfers = Array.isArray(job.activeTransfers) && job.activeTransfers.length > 0
-    ? job.activeTransfers
-    : ((job.currentSetId || job.currentSetName) && ['preparing', 'running', 'queued'].includes(job.status))
-      ? [{
-          setId: job.currentSetId,
-          setName: job.currentSetName || `Набор ${job.currentSetId}`,
-          mirror: job.currentMirror || '',
-          bytes: job.currentBytes || 0,
-          totalBytes: job.currentTotalBytes,
-          percent: currentPercent,
-        }]
-      : [];
+  const activeTransfers =
+    Array.isArray(job.activeTransfers) && job.activeTransfers.length > 0
+      ? job.activeTransfers
+      : (job.currentSetId || job.currentSetName) && ['preparing', 'running', 'queued'].includes(job.status)
+        ? [
+            {
+              setId: job.currentSetId,
+              setName: job.currentSetName || `Набор ${job.currentSetId}`,
+              mirror: job.currentMirror || '',
+              bytes: job.currentBytes || 0,
+              totalBytes: job.currentTotalBytes,
+              percent: currentPercent,
+            },
+          ]
+        : [];
 
   if (transfersChevronEl) {
-    transfersChevronEl.hidden = activeTransfers.length === 0 && !['preparing', 'running', 'queued'].includes(job.status);
+    transfersChevronEl.hidden =
+      activeTransfers.length === 0 && !['preparing', 'running', 'queued'].includes(job.status);
   }
 
   if (transfersListEl && transfersDetailsEl) {
@@ -407,7 +422,10 @@ export function updateJob(job) {
   }
   const transferLabelEl = byId('transfer-label');
   if (transferLabelEl) {
-    transferLabelEl.textContent = (job.currentSetName || (job.currentSetId ? `Набор ${job.currentSetId}` : 'Прогресс текущего набора')) + (job.currentMirror ? ` · ${job.currentMirror}` : '') + (job.noVideo ? ' · без видео' : '');
+    transferLabelEl.textContent =
+      (job.currentSetName || (job.currentSetId ? `Набор ${job.currentSetId}` : 'Прогресс текущего набора')) +
+      (job.currentMirror ? ` · ${job.currentMirror}` : '') +
+      (job.noVideo ? ' · без видео' : '');
   }
 
   const dlCountEl = byId('downloaded-count');
@@ -455,10 +473,18 @@ export function updateJob(job) {
     }
   }
 
-  const tone = job.failed && job.status === 'finished_with_errors' ? 'error' : job.status === 'paused' ? 'warn' : job.status === 'finished' ? 'success' : '';
-  const autoResume = job.status === 'paused' && Number.isFinite(job.autoResumeAt)
-    ? ` Автовозобновление через ${Math.max(0, Math.ceil((job.autoResumeAt - Date.now()) / 1000))} с.`
-    : '';
+  const tone =
+    job.failed && job.status === 'finished_with_errors'
+      ? 'error'
+      : job.status === 'paused'
+        ? 'warn'
+        : job.status === 'finished'
+          ? 'success'
+          : '';
+  const autoResume =
+    job.status === 'paused' && Number.isFinite(job.autoResumeAt)
+      ? ` Автовозобновление через ${Math.max(0, Math.ceil((job.autoResumeAt - Date.now()) / 1000))} с.`
+      : '';
   const downloadStatus = byId('download-status');
   setStatus(downloadStatus, `${job.message || 'Загрузка…'}${autoResume}`, tone);
 }
@@ -481,7 +507,10 @@ export function finishJob(job, errorMessage = '') {
   const retryFailedButton = /** @type {HTMLButtonElement | null} */ (byId('retry-failed-button'));
   const downloadStatus = byId('download-status');
 
-  const canResume = (job?.status === 'paused' || (job?.status === 'finished_with_errors' && (job.deferred || 0) > 0)) && !errorMessage && !Number.isFinite(job.autoResumeAt);
+  const canResume =
+    (job?.status === 'paused' || (job?.status === 'finished_with_errors' && (job.deferred || 0) > 0)) &&
+    !errorMessage &&
+    !Number.isFinite(job.autoResumeAt);
   if (canResume) {
     pausedJob = job.id;
     if (resumeButton) resumeButton.hidden = false;
@@ -494,7 +523,9 @@ export function finishJob(job, errorMessage = '') {
     persistJobId(null);
   }
 
-  const canRetry = Boolean(job && (job.canRetryFailed ?? (job.failed > 0)) && !['preparing', 'queued', 'running'].includes(job.status));
+  const canRetry = Boolean(
+    job && (job.canRetryFailed ?? job.failed > 0) && !['preparing', 'queued', 'running'].includes(job.status),
+  );
   if (retryFailedButton) {
     retryFailedButton.hidden = !canRetry;
     if (canRetry) {
@@ -511,10 +542,18 @@ export function finishJob(job, errorMessage = '') {
   }
 
   if (errorMessage) setStatus(downloadStatus, errorMessage, 'error');
-  else if (job?.status === 'finished') setStatus(downloadStatus, 'Готово! Файлы находятся в папке downloads.', 'success');
-  else if (job?.status === 'paused') setStatus(downloadStatus, job.message || 'Зеркала временно ограничили загрузки — нажмите «Продолжить» позже.', 'warn');
-  else if (job?.status === 'finished_with_errors') setStatus(downloadStatus, `${job.message} Успешные загрузки лежат в папке downloads.`, 'error');
-  else if (job?.status === 'cancelled') setStatus(downloadStatus, 'Загрузка остановлена. Уже скачанные файлы сохранены.');
+  else if (job?.status === 'finished')
+    setStatus(downloadStatus, 'Готово! Файлы находятся в папке downloads.', 'success');
+  else if (job?.status === 'paused')
+    setStatus(
+      downloadStatus,
+      job.message || 'Зеркала временно ограничили загрузки — нажмите «Продолжить» позже.',
+      'warn',
+    );
+  else if (job?.status === 'finished_with_errors')
+    setStatus(downloadStatus, `${job.message} Успешные загрузки лежат в папке downloads.`, 'error');
+  else if (job?.status === 'cancelled')
+    setStatus(downloadStatus, 'Загрузка остановлена. Уже скачанные файлы сохранены.');
 
   updateDownloadButton();
 
@@ -590,7 +629,11 @@ export async function restoreJob() {
               progressWrap?.classList.add('visible');
               updateJob(lastJob);
               finishJob(lastJob);
-              setStatus(downloadStatus, `${lastJob.message || 'Загрузка завершена.'} (сохранено локально)`, lastJob.failed ? 'error' : 'success');
+              setStatus(
+                downloadStatus,
+                `${lastJob.message || 'Загрузка завершена.'} (сохранено локально)`,
+                lastJob.failed ? 'error' : 'success',
+              );
               return;
             }
           }
@@ -632,7 +675,7 @@ export function initDownloadsUi(options = {}) {
     });
   }
 
-  methodInputs.forEach(input => {
+  methodInputs.forEach((input) => {
     input.addEventListener('change', () => {
       if (input.value === 'session' && input.checked && !isSessionConnected()) {
         if (sessionAdvancedDetails) sessionAdvancedDetails.open = true;
@@ -671,7 +714,11 @@ export function initDownloadsUi(options = {}) {
     } catch (rawError) {
       const error = toAny(rawError);
       if (error.name === 'TimeoutError') {
-        setStatus(downloadStatus, 'Локальный сервер не ответил вовремя — задача могла создаться; обновите страницу, чтобы вернуться к ней.', 'warn');
+        setStatus(
+          downloadStatus,
+          'Локальный сервер не ответил вовремя — задача могла создаться; обновите страницу, чтобы вернуться к ней.',
+          'warn',
+        );
         downloadButton.disabled = false;
         return;
       }
@@ -723,10 +770,13 @@ export function initDownloadsUi(options = {}) {
       setStatus(downloadStatus, 'Перезапуск загрузки наборов с ошибками…');
       try {
         const noVideo = Boolean(checkboxNoVideo?.checked);
-        const job = await api(`/api/downloads/${targetId}/retry-failed?method=${method}${noVideo ? '&noVideo=1' : ''}`, {
-          method: 'POST',
-          body: JSON.stringify({ noVideo }),
-        });
+        const job = await api(
+          `/api/downloads/${targetId}/retry-failed?method=${method}${noVideo ? '&noVideo=1' : ''}`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ noVideo }),
+          },
+        );
         pausedJob = null;
         if (resumeButton) resumeButton.hidden = true;
         retryFailedButton.hidden = true;
@@ -759,4 +809,3 @@ export function initDownloadsUi(options = {}) {
     }
   });
 }
-

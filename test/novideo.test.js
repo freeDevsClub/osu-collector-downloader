@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -36,12 +36,12 @@ describe('Режим скачивания «Без видео» (No Video)', () 
       });
       res.end(validZipBuffer);
     });
-    await new Promise(r => server.listen(0, '127.0.0.1', r));
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
     serverPort = /** @type {import('node:net').AddressInfo} */ (server.address()).port;
   });
 
   after(async () => {
-    await new Promise(r => server.close(r));
+    await new Promise((r) => server.close(r));
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -49,7 +49,10 @@ describe('Режим скачивания «Без видео» (No Video)', () 
 
   it('appendNoVideo корректно добавляет параметр к URL', () => {
     assert.equal(appendNoVideo('https://osu.direct/d/123'), 'https://osu.direct/d/123?noVideo=1');
-    assert.equal(appendNoVideo('https://mirror.example.com/api?id=123'), 'https://mirror.example.com/api?id=123&noVideo=1');
+    assert.equal(
+      appendNoVideo('https://mirror.example.com/api?id=123'),
+      'https://mirror.example.com/api?id=123&noVideo=1',
+    );
     assert.equal(appendNoVideo('https://osu.direct/d/123?noVideo=1'), 'https://osu.direct/d/123?noVideo=1');
   });
 
@@ -57,7 +60,10 @@ describe('Режим скачивания «Без видео» (No Video)', () 
     assert.equal(buildMirrorUrl('https://osu.direct/d/{id}', 555), 'https://osu.direct/d/555');
     assert.equal(buildMirrorUrl('https://osu.direct/d/{id}', 555, false), 'https://osu.direct/d/555');
     assert.equal(buildMirrorUrl('https://osu.direct/d/{id}', 555, true), 'https://osu.direct/d/555?noVideo=1');
-    assert.equal(buildMirrorUrl('https://osu.direct/d/{id}', 555, { noVideo: true }), 'https://osu.direct/d/555?noVideo=1');
+    assert.equal(
+      buildMirrorUrl('https://osu.direct/d/{id}', 555, { noVideo: true }),
+      'https://osu.direct/d/555?noVideo=1',
+    );
   });
 
   it('DEFAULT_MIRRORS поддерживают noVideo', () => {
@@ -74,7 +80,7 @@ describe('Режим скачивания «Без видео» (No Video)', () 
     const normalEst = await estimateRequiredDiskSpace(setIds, false);
     const noVideoEst = await estimateRequiredDiskSpace(setIds, true);
     assert.equal(normalEst, 3 * 10 * 1024 * 1024); // 30 МБ
-    assert.equal(noVideoEst, 3 * 3 * 1024 * 1024);   // 9 МБ
+    assert.equal(noVideoEst, 3 * 3 * 1024 * 1024); // 9 МБ
   });
 
   it('downloadSet передаёт параметр noVideo=1 в запрос при включённом режиме', async () => {
@@ -110,7 +116,11 @@ describe('Режим скачивания «Без видео» (No Video)', () 
 
     await downloadSet(88002, { kind: 'mirror', mirror: testMirror }, jobWithVideo);
     assert.equal(requestedUrls.length, 1);
-    assert.equal(requestedUrls[0].includes('noVideo=1'), false, `noVideo=1 не должен присутствовать в URL: ${requestedUrls[0]}`);
+    assert.equal(
+      requestedUrls[0].includes('noVideo=1'),
+      false,
+      `noVideo=1 не должен присутствовать в URL: ${requestedUrls[0]}`,
+    );
   });
 
   it('safeJobForClient корректно возвращает noVideo клиенту', () => {

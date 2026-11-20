@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,12 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const {
-  jobs,
-  getActiveJob,
-  setActiveJob,
-  jobCounters,
-} = require('../lib/jobs.js');
+const { jobs, getActiveJob, setActiveJob, jobCounters } = require('../lib/jobs.js');
 
 const { server } = require('../server.js');
 
@@ -26,13 +21,13 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
     process.env.DOWNLOADS_DIR = tempDir;
 
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
   });
 
   after(async () => {
     if (appServer) {
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -49,9 +44,11 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
       const req = http.request(
         `http://127.0.0.1:${appPort}/api/downloads/${jobId}/cancel`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' } },
-        res => {
+        (res) => {
           let body = '';
-          res.on('data', chunk => { body += chunk; });
+          res.on('data', (chunk) => {
+            body += chunk;
+          });
           res.on('end', () => {
             try {
               resolve({ status: res.statusCode, data: JSON.parse(body) });
@@ -59,7 +56,7 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
               resolve({ status: res.statusCode, text: body });
             }
           });
-        }
+        },
       );
       req.on('error', reject);
       req.end('{}');
@@ -128,7 +125,9 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
   it('успешно отменяет задачу в статусе running', async () => {
     let aborted = false;
     const abortController = new AbortController();
-    abortController.signal.addEventListener('abort', () => { aborted = true; });
+    abortController.signal.addEventListener('abort', () => {
+      aborted = true;
+    });
 
     const job = {
       id: 'c1b2c3d4e5f67890123456789abcdef2',

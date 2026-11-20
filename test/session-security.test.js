@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,13 +16,13 @@ describe('Безопасность сессий и cookie osu_session (/api/sess
 
   before(async () => {
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
   });
 
   after(async () => {
     if (appServer) {
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
   });
 
@@ -50,12 +50,16 @@ describe('Безопасность сессий и cookie osu_session (/api/sess
             ...headers,
           },
         },
-        res => {
+        (res) => {
           let data = '';
-          res.on('data', chunk => { data += chunk; });
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
           res.on('end', () => {
             let jsonBody = null;
-            try { jsonBody = JSON.parse(data); } catch {}
+            try {
+              jsonBody = JSON.parse(data);
+            } catch {}
             resolve({
               status: res.statusCode,
               headers: res.headers,
@@ -63,7 +67,7 @@ describe('Безопасность сессий и cookie osu_session (/api/sess
               rawText: data,
             });
           });
-        }
+        },
       );
       req.on('error', reject);
       if (payload) req.write(payload);
@@ -96,7 +100,12 @@ describe('Безопасность сессий и cookie osu_session (/api/sess
 
     it('отклоняет значения с пробелами, новыми строками и служебными символами', async () => {
       // С пробелом
-      const resSpace = await apiRequest('POST', '/api/session', {}, { session: 'session token with spaces inside 12345' });
+      const resSpace = await apiRequest(
+        'POST',
+        '/api/session',
+        {},
+        { session: 'session token with spaces inside 12345' },
+      );
       assert.equal(resSpace.status, 400);
       assert.match(resSpace.body?.error, /Некорректный формат/);
 
@@ -105,11 +114,21 @@ describe('Безопасность сессий и cookie osu_session (/api/sess
       assert.equal(resSemi.status, 400);
 
       // С переводом строки
-      const resNl = await apiRequest('POST', '/api/session', {}, { session: 'session_token_12345\r\nInjected: header' });
+      const resNl = await apiRequest(
+        'POST',
+        '/api/session',
+        {},
+        { session: 'session_token_12345\r\nInjected: header' },
+      );
       assert.equal(resNl.status, 400);
 
       // С кавычками или HTML
-      const resQuote = await apiRequest('POST', '/api/session', {}, { session: 'session_token_12345<script>alert(1)</script>' });
+      const resQuote = await apiRequest(
+        'POST',
+        '/api/session',
+        {},
+        { session: 'session_token_12345<script>alert(1)</script>' },
+      );
       assert.equal(resQuote.status, 400);
     });
 

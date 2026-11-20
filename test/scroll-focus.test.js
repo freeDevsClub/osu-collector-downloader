@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
@@ -52,8 +52,16 @@ describe('Устранение бага со скроллом и потерей 
 
       finishJob({ id: 'job_test_scroll', status: 'cancelled' });
 
-      assert.equal(bodyBlurCalled, false, 'document.body.blur() НЕ должен вызываться, чтобы браузер не сбрасывал фокус окна');
-      assert.equal(windowFocusCalled, true, 'window.focus() должен вызываться для гарантированного возвращения событий мыши и колесика');
+      assert.equal(
+        bodyBlurCalled,
+        false,
+        'document.body.blur() НЕ должен вызываться, чтобы браузер не сбрасывал фокус окна',
+      );
+      assert.equal(
+        windowFocusCalled,
+        true,
+        'window.focus() должен вызываться для гарантированного возвращения событий мыши и колесика',
+      );
     } finally {
       /** @type {any} */ (global).document = origDocument;
       /** @type {any} */ (global).window = origWindow;
@@ -124,4 +132,3 @@ describe('Устранение бага со скроллом и потерей 
     assert.doesNotMatch(css, /contain-intrinsic-size/i);
   });
 });
-

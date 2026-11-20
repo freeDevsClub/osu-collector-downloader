@@ -23,7 +23,7 @@ export function setOsuSettings(s) {
 }
 
 function getPostActionInputs() {
-  return (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
+  return typeof document !== 'undefined' && typeof document.querySelectorAll === 'function'
     ? /** @type {HTMLInputElement[]} */ ([...document.querySelectorAll('input[name="post-download-action"]')])
     : [];
 }
@@ -56,7 +56,7 @@ export function renderOsuSettings(settings, updateInput = true) {
   if (checkboxCheckExisting) {
     checkboxCheckExisting.checked = osuSettings.checkExisting;
   }
-  postActionInputs.forEach(input => {
+  postActionInputs.forEach((input) => {
     input.checked = input.value === osuSettings.postDownloadAction;
     const option = byId(`option-action-${input.value}`);
     option?.classList.toggle('selected', input.checked);
@@ -104,8 +104,8 @@ export async function saveOsuSettings(patchOrToast = true, maybeToast, recheckCo
   const osuStatus = byId('osu-status');
 
   /** @type {{ osuPath?: string, checkExisting?: boolean, postDownloadAction?: string }} */
-  let patch = {};
-  let showToast = true;
+  let patch;
+  let showToast;
 
   if (typeof patchOrToast === 'object' && patchOrToast !== null) {
     patch = patchOrToast;
@@ -115,7 +115,7 @@ export async function saveOsuSettings(patchOrToast = true, maybeToast, recheckCo
     patch = {
       osuPath: osuPathInput ? osuPathInput.value.trim() : osuSettings.osuPath,
       checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
-      postDownloadAction: postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction,
+      postDownloadAction: postActionInputs.find((i) => i.checked)?.value || osuSettings.postDownloadAction,
     };
   }
 
@@ -131,8 +131,13 @@ export async function saveOsuSettings(patchOrToast = true, maybeToast, recheckCo
     renderOsuSettings(data, isPathUpdate);
     if (isPathUpdate) {
       if (data.valid) {
-        setStatus(osuStatus, `Настройки сохранены. Найдено ${formatPluralRu(data.songsCount, 'набор', 'набора', 'наборов')} карт в osu! Songs.`, 'success');
-        if (showToast) notify(`osu! Songs подключена (${formatPluralRu(data.songsCount, 'набор', 'набора', 'наборов')}).`);
+        setStatus(
+          osuStatus,
+          `Настройки сохранены. Найдено ${formatPluralRu(data.songsCount, 'набор', 'набора', 'наборов')} карт в osu! Songs.`,
+          'success',
+        );
+        if (showToast)
+          notify(`osu! Songs подключена (${formatPluralRu(data.songsCount, 'набор', 'набора', 'наборов')}).`);
       } else {
         setStatus(osuStatus, 'Путь сохранён (папка osu! отключена).', '');
         if (showToast) notify('Настройки osu! обновлены.');
@@ -149,7 +154,7 @@ export async function saveOsuSettings(patchOrToast = true, maybeToast, recheckCo
       if (checkboxCheckExisting) {
         checkboxCheckExisting.checked = osuSettings.checkExisting;
       }
-      postActionInputs.forEach(input => {
+      postActionInputs.forEach((input) => {
         input.checked = input.value === osuSettings.postDownloadAction;
         const option = byId(`option-action-${input.value}`);
         option?.classList.toggle('selected', input.checked);
@@ -175,7 +180,11 @@ export async function rescanOsuSongs(recheckCollection) {
     const data = await api('/api/osu/rescan', { method: 'POST' });
     osuSettings.songsCount = Number(data.count || 0);
     renderOsuSettings(osuSettings, false);
-    setStatus(osuStatus, `Сканирование завершено: найдено ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} карт.`, 'success');
+    setStatus(
+      osuStatus,
+      `Сканирование завершено: найдено ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} карт.`,
+      'success',
+    );
     notify(`Найдено ${formatPluralRu(data.count, 'набор', 'набора', 'наборов')} карт в osu! Songs.`);
     if (typeof recheckCollection === 'function') {
       await recheckCollection();
@@ -220,11 +229,15 @@ export function initSettingsUi(options = {}) {
           if (osuPathInput) {
             osuPathInput.value = data.path;
           }
-          await saveOsuSettings({
-            osuPath: data.path,
-            checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
-            postDownloadAction: postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction,
-          }, true, options.recheckCollection);
+          await saveOsuSettings(
+            {
+              osuPath: data.path,
+              checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
+              postDownloadAction: postActionInputs.find((i) => i.checked)?.value || osuSettings.postDownloadAction,
+            },
+            true,
+            options.recheckCollection,
+          );
         } else {
           setStatus(osuStatus, 'Выбор папки отменён.', '');
         }
@@ -241,24 +254,32 @@ export function initSettingsUi(options = {}) {
   if (osuPathSave) {
     osuPathSave.addEventListener('click', () => {
       const osuPath = osuPathInput ? osuPathInput.value.trim() : '';
-      void saveOsuSettings({
-        osuPath,
-        checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
-        postDownloadAction: postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction,
-      }, true, options.recheckCollection);
+      void saveOsuSettings(
+        {
+          osuPath,
+          checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
+          postDownloadAction: postActionInputs.find((i) => i.checked)?.value || osuSettings.postDownloadAction,
+        },
+        true,
+        options.recheckCollection,
+      );
     });
   }
 
   if (osuPathInput) {
-    osuPathInput.addEventListener('keydown', event => {
+    osuPathInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         const osuPath = osuPathInput.value.trim();
-        void saveOsuSettings({
-          osuPath,
-          checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
-          postDownloadAction: postActionInputs.find(i => i.checked)?.value || osuSettings.postDownloadAction,
-        }, true, options.recheckCollection);
+        void saveOsuSettings(
+          {
+            osuPath,
+            checkExisting: checkboxCheckExisting ? checkboxCheckExisting.checked : osuSettings.checkExisting,
+            postDownloadAction: postActionInputs.find((i) => i.checked)?.value || osuSettings.postDownloadAction,
+          },
+          true,
+          options.recheckCollection,
+        );
       }
     });
   }
@@ -275,13 +296,12 @@ export function initSettingsUi(options = {}) {
     });
   }
 
-  postActionInputs.forEach(input => {
+  postActionInputs.forEach((input) => {
     input.addEventListener('change', () => {
-      postActionInputs.forEach(i => {
+      postActionInputs.forEach((i) => {
         byId(`option-action-${i.value}`)?.classList.toggle('selected', i.checked);
       });
       void saveOsuSettings({ postDownloadAction: input.value }, false, options.recheckCollection);
     });
   });
 }
-

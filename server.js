@@ -1,21 +1,11 @@
 // @ts-check
-"use strict";
+'use strict';
 
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
 
-const {
-  HOST,
-  PORT,
-  ROOT,
-  getDownloadsDir,
-  getDataDir,
-  MIRRORS,
-  log,
-  json,
-} = require('./lib/config.js');
+const { HOST, PORT, ROOT, getDownloadsDir, getDataDir, MIRRORS, log, json } = require('./lib/config.js');
 
 const {
   sessions,
@@ -32,13 +22,9 @@ const {
   ensureLocalRequest,
 } = require('./lib/security.js');
 
-const {
-  pruneCollectionCache,
-} = require('./lib/collector.js');
+const { pruneCollectionCache } = require('./lib/collector.js');
 
-const {
-  cleanupStalePartFiles,
-} = require('./lib/downloader.js');
+const { cleanupStalePartFiles } = require('./lib/downloader.js');
 
 const {
   jobs,
@@ -49,24 +35,18 @@ const {
   clearAutoResume,
 } = require('./lib/jobs.js');
 
-const {
-  getSettings: getOsuSettings,
-  getCachedOsuSongsAsync,
-} = require('./lib/osu.js');
+const { getSettings: getOsuSettings, getCachedOsuSongsAsync } = require('./lib/osu.js');
 
-const {
-  closeStreamOrSocket,
-  handleApi,
-} = require('./lib/routes/index.js');
-
+const { closeStreamOrSocket, handleApi } = require('./lib/routes/index.js');
 
 const server = http.createServer(async (req, res) => {
   /** @type {any} */ (req).res = res;
   const requestStartedAt = Date.now();
   res.on('finish', () => {
     const requestUrl = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
-    const isExpectedNotFound = req.method === 'GET' && requestUrl.pathname === '/api/downloads/active' && res.statusCode === 404;
-    const level = res.statusCode >= 500 ? 'error' : (res.statusCode >= 400 && !isExpectedNotFound) ? 'warn' : 'debug';
+    const isExpectedNotFound =
+      req.method === 'GET' && requestUrl.pathname === '/api/downloads/active' && res.statusCode === 404;
+    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 && !isExpectedNotFound ? 'warn' : 'debug';
     log(level, 'http.request.completed', {
       method: req.method,
       path: requestUrl.pathname,
@@ -92,17 +72,18 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === '/favicon.ico') {
       if (!['GET', 'HEAD'].includes(req.method)) {
-        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' });
+        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET, HEAD' });
         return res.end('Method not allowed');
       }
       res.writeHead(204, { 'Cache-Control': 'no-store' });
       return res.end();
     }
 
-    const isStaticAsset = ['/', '/index.html', '/app.js', '/style.css'].includes(url.pathname) || url.pathname.startsWith('/public/');
+    const isStaticAsset =
+      ['/', '/index.html', '/app.js', '/style.css'].includes(url.pathname) || url.pathname.startsWith('/public/');
     if (isStaticAsset) {
       if (!['GET', 'HEAD'].includes(req.method)) {
-        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' });
+        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET, HEAD' });
         return res.end('Method not allowed');
       }
 
@@ -111,7 +92,7 @@ const server = http.createServer(async (req, res) => {
           const providedToken = url.searchParams.get('token') || '';
           if (safeCompareTokens(providedToken, getApiToken())) {
             res.writeHead(302, {
-              'Location': '/',
+              Location: '/',
               'Set-Cookie': `${localApiTokenCookie}=${getApiToken()}; ${cookieOptions(req, 60 * 60 * 24)}`,
               'Cache-Control': 'no-store',
             });
@@ -121,13 +102,14 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      const rawAsset = (url.pathname === '/' || url.pathname === '/index.html')
-        ? 'index.html'
-        : url.pathname === '/app.js'
-          ? 'app.js'
-          : url.pathname === '/style.css'
-            ? 'style.css'
-            : url.pathname.replace(/^\/+/, '');
+      const rawAsset =
+        url.pathname === '/' || url.pathname === '/index.html'
+          ? 'index.html'
+          : url.pathname === '/app.js'
+            ? 'app.js'
+            : url.pathname === '/style.css'
+              ? 'style.css'
+              : url.pathname.replace(/^\/+/, '');
       const filePath = path.resolve(ROOT, rawAsset);
       const rel = path.relative(ROOT, filePath);
       if (rel.startsWith('..') || path.isAbsolute(rel)) {
@@ -158,7 +140,11 @@ const server = http.createServer(async (req, res) => {
       const hasValidTokenCookie = safeCompareTokens(cookies[localApiTokenCookie], getApiToken());
       /** @type {Record<string, string>} */
       const extraHeaders = {};
-      if ((url.pathname === '/' || url.pathname === '/index.html') && !hasValidTokenCookie && !isInitialCookieGranted()) {
+      if (
+        (url.pathname === '/' || url.pathname === '/index.html') &&
+        !hasValidTokenCookie &&
+        !isInitialCookieGranted()
+      ) {
         setInitialCookieGranted(true);
         extraHeaders['Set-Cookie'] = `${localApiTokenCookie}=${getApiToken()}; ${cookieOptions(req, 60 * 60 * 24)}`;
       }
@@ -166,7 +152,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, {
         'Content-Type': contentType,
         'Cache-Control': 'no-store',
-        'Content-Security-Policy': "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+        'Content-Security-Policy':
+          "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'Referrer-Policy': 'no-referrer',
@@ -180,13 +167,14 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     const err = /** @type {any} */ (error);
     log('error', 'http.request.failed', { method: req.method, path: url.pathname, error: safeErrorMessage(error) });
-    const status = (typeof err?.status === 'number' && err.status >= 400 && err.status <= 599)
-      ? err.status
-      : (typeof err?.httpStatus === 'number' && err.httpStatus >= 400 && err.httpStatus <= 599)
-        ? err.httpStatus
-        : 500;
+    const status =
+      typeof err?.status === 'number' && err.status >= 400 && err.status <= 599
+        ? err.status
+        : typeof err?.httpStatus === 'number' && err.httpStatus >= 400 && err.httpStatus <= 599
+          ? err.httpStatus
+          : 500;
     const isPayloadTooLarge = status === 413;
-    const extraHeaders = isPayloadTooLarge ? { 'Connection': 'close' } : {};
+    const extraHeaders = isPayloadTooLarge ? { Connection: 'close' } : {};
     json(res, status, { error: safeErrorMessage(error) || 'Внутренняя ошибка.' }, extraHeaders);
     if (isPayloadTooLarge) {
       closeStreamOrSocket(req);
@@ -256,9 +244,11 @@ async function startServer(port = PORT, host = HOST, options = {}) {
         node: process.version,
         downloadsDirectory: getDownloadsDir(),
         dataDirectory: getDataDir(),
-        downloadMirrors: MIRRORS.map(mirror => mirror.id),
+        downloadMirrors: MIRRORS.map((mirror) => mirror.id),
       });
-      log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.` });
+      log('info', 'server.hint', {
+        hint: `Скачивание идёт через зеркала: ${MIRRORS.map((mirror) => mirror.label).join(', ')}.`,
+      });
       resolve(server);
     });
   });

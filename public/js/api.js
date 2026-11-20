@@ -67,7 +67,9 @@ export function renderSessionState(connected, updateDownloadBtn) {
   if (clearBtn) clearBtn.hidden = !connected;
   const sessionInput = /** @type {HTMLInputElement | null} */ (byId('session-cookie'));
   if (sessionInput) {
-    sessionInput.placeholder = connected ? 'Сессия активна в памяти (вставьте новую для замены)' : 'Вставьте значение cookie osu_session';
+    sessionInput.placeholder = connected
+      ? 'Сессия активна в памяти (вставьте новую для замены)'
+      : 'Вставьте значение cookie osu_session';
   }
   const sessionRiskConfirm = /** @type {HTMLInputElement | null} */ (byId('session-risk-confirm'));
   if (sessionRiskConfirm) {
@@ -91,7 +93,7 @@ export function initSessionUi(options = {}) {
   sessionInput?.addEventListener('input', updateSessionSaveButton);
   sessionRiskConfirm?.addEventListener('change', updateSessionSaveButton);
 
-  sessionForm?.addEventListener('submit', async event => {
+  sessionForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     let session = sessionInput ? sessionInput.value.trim() : '';
     if (session.toLowerCase().startsWith('osu_session=')) {
@@ -102,7 +104,7 @@ export function initSessionUi(options = {}) {
       notify('Подтвердите понимание рисков безопасности перед сохранением.');
       return;
     }
-    if (session.length < 20 || session.length > 1024 || !/^[a-zA-Z0-9%_\-\.=/+|]+$/.test(session)) {
+    if (session.length < 20 || session.length > 1024 || !/^[a-zA-Z0-9%_\-.=/+|]+$/.test(session)) {
       notify('Некорректный формат cookie. Ожидается токен сессии osu.ppy.sh (без пробелов и спецсимволов).');
       return;
     }
@@ -130,4 +132,3 @@ export function initSessionUi(options = {}) {
     }
   });
 }
-

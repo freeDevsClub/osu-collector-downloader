@@ -4,13 +4,13 @@
  * @param {string} id
  * @returns {any}
  */
-export const byId = id => (typeof document !== 'undefined' ? document.getElementById(id) : null);
+export const byId = (id) => (typeof document !== 'undefined' ? document.getElementById(id) : null);
 
 /**
  * @param {unknown} err
  * @returns {any}
  */
-export const toAny = err => /** @type {any} */ (err);
+export const toAny = (err) => /** @type {any} */ (err);
 
 const ruPluralRules = new Intl.PluralRules('ru-RU');
 
@@ -87,4 +87,3 @@ export function notify(text) {
   clearTimeout(notifyTimer);
   notifyTimer = setTimeout(() => toast.classList.remove('show'), 3200);
 }
-

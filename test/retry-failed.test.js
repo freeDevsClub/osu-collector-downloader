@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,11 +19,7 @@ const {
   waitForPendingSaveState,
 } = require('../lib/jobs.js');
 const { server } = require('../server.js');
-const {
-  setMirrorsForTest,
-  resetMirrorsForTest,
-  mirrorCooldowns,
-} = require('../lib/mirrors.js');
+const { setMirrorsForTest, resetMirrorsForTest, mirrorCooldowns } = require('../lib/mirrors.js');
 const { PORT, buildMirrorUrl } = require('../lib/config.js');
 
 describe('Повтор загрузки наборов с ошибками (Retry Failed Only)', () => {
@@ -69,17 +65,19 @@ describe('Повтор загрузки наборов с ошибками (Retr
       });
       res.end(validZipBuffer);
     });
-    await new Promise(r => mockMirrorServer.listen(0, '127.0.0.1', r));
+    await new Promise((r) => mockMirrorServer.listen(0, '127.0.0.1', r));
     mockMirrorPort = /** @type {import('node:net').AddressInfo} */ (mockMirrorServer.address()).port;
 
-    setMirrorsForTest([{
-      id: 'mock_retry_mirror',
-      label: 'Mock Retry Mirror',
-      build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
-    }]);
+    setMirrorsForTest([
+      {
+        id: 'mock_retry_mirror',
+        label: 'Mock Retry Mirror',
+        build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
+      },
+    ]);
 
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
   });
 
@@ -87,10 +85,10 @@ describe('Повтор загрузки наборов с ошибками (Retr
     await waitForPendingSaveState();
     resetMirrorsForTest();
     if (appServer) {
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
     if (mockMirrorServer) {
-      await new Promise(resolve => mockMirrorServer.close(resolve));
+      await new Promise((resolve) => mockMirrorServer.close(resolve));
     }
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -111,11 +109,13 @@ describe('Повтор загрузки наборов с ошибками (Retr
       doneIds: new Set([101]),
       skipIds: new Set([102]),
       errIds: new Set([101, 103, 104]),
-      errorsById: new Map(/** @type {[string | number, any][]} */ ([
-        [103, { id: 103, error: 'Network timeout' }],
-        [105, { id: 105, error: 'HTTP 500' }],
-        ['fatal', { id: 'fatal', error: 'Process crashed' }],
-      ])),
+      errorsById: new Map(
+        /** @type {[string | number, any][]} */ ([
+          [103, { id: 103, error: 'Network timeout' }],
+          [105, { id: 105, error: 'HTTP 500' }],
+          ['fatal', { id: 'fatal', error: 'Process crashed' }],
+        ]),
+      ),
     };
 
     const failedIds = getFailedSetIds(job);
@@ -125,7 +125,10 @@ describe('Повтор загрузки наборов с ошибками (Retr
     // 104 в errIds -> включается
     // 105 в errorsById -> включается
     // 'fatal' -> не число, исключается
-    assert.deepEqual(failedIds.sort((a, b) => a - b), [103, 104, 105]);
+    assert.deepEqual(
+      failedIds.sort((a, b) => a - b),
+      [103, 104, 105],
+    );
     assert.deepEqual(getFailedSetIds(null), []);
     assert.deepEqual(getFailedSetIds({}), []);
   });
@@ -229,7 +232,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
     // Ждём завершения задачи
     while (['queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
     if (job._promise) await job._promise;
 
@@ -266,7 +269,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
     job.abortController?.abort();
 
     while (job.retryOnlyIds) {
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 10));
     }
     if (job._promise) await job._promise;
 
@@ -303,7 +306,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
     // Ждём, пока задача перейдёт в paused
     while (['queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
 
     // Проверяем статус и счётчики
@@ -330,7 +333,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
     // Ждём завершения докачки
     while (['queued', 'running'].includes(job.status)) {
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
     if (job._promise) await job._promise;
     await waitForPendingSaveState();
@@ -406,11 +409,14 @@ describe('Повтор загрузки наборов с ошибками (Retr
     };
     jobs.set(jobWithFail.id, jobWithFail);
 
-    const res202 = await fetch(`http://127.0.0.1:${appPort}/api/downloads/${jobWithFail.id}/retry-failed?method=mirror&noVideo=1`, {
-      method: 'POST',
-      headers: localHeaders,
-      body: JSON.stringify({ noVideo: true }),
-    });
+    const res202 = await fetch(
+      `http://127.0.0.1:${appPort}/api/downloads/${jobWithFail.id}/retry-failed?method=mirror&noVideo=1`,
+      {
+        method: 'POST',
+        headers: localHeaders,
+        body: JSON.stringify({ noVideo: true }),
+      },
+    );
     assert.equal(res202.status, 202);
     const data202 = await res202.json();
     assert.equal(data202.id, jobWithFail.id);
@@ -419,7 +425,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
     // Дожидаемся завершения перезапущенной задачи
     while (['queued', 'running'].includes(jobWithFail.status)) {
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
     if (jobWithFail._promise) await jobWithFail._promise;
     await waitForPendingSaveState();
@@ -434,14 +440,15 @@ describe('Повтор загрузки наборов с ошибками (Retr
       skipIds: new Set(),
       errIds: new Set(),
       extraFailures: 0,
-      errorsById: new Map([
-        ['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Unexpected exception' }],
-      ]),
+      errorsById: new Map([['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Unexpected exception' }]]),
     };
     const counters = jobCounters(jobWithoutExtraField);
     assert.equal(counters.failed, 1, 'jobCounters должен учесть fatal ошибку из errorsById');
     const failedIds = getFailedSetIds(jobWithoutExtraField);
-    assert.deepEqual(failedIds.sort((a, b) => a - b), [901, 902]);
+    assert.deepEqual(
+      failedIds.sort((a, b) => a - b),
+      [901, 902],
+    );
   });
 
   it('корректно обрабатывает критический сбой задачи (fatal): учитывает extraFailures, отображает canRetryFailed и успешно перезапускает незавершённые наборы', async () => {
@@ -460,9 +467,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
       skipIds: new Set(),
       errIds: new Set(),
       extraFailures: 1,
-      errorsById: new Map([
-        ['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Network disconnected' }],
-      ]),
+      errorsById: new Map([['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Network disconnected' }]]),
       mapsById: new Map([
         [801, { id: 801, label: 'Map 801' }],
         [802, { id: 802, label: 'Map 802' }],
@@ -486,7 +491,11 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
     // 2. Проверяем getFailedSetIds
     const failedIds = getFailedSetIds(jobFatal);
-    assert.deepEqual(failedIds.sort((a, b) => a - b), [802, 803], 'Должны вернуться все незавершённые наборы (802, 803), а 801 исключён');
+    assert.deepEqual(
+      failedIds.sort((a, b) => a - b),
+      [802, 803],
+      'Должны вернуться все незавершённые наборы (802, 803), а 801 исключён',
+    );
 
     // 3. Вызываем POST /api/downloads/:id/retry-failed через HTTP API
     const res = await fetch(`http://127.0.0.1:${appPort}/api/downloads/${jobFatal.id}/retry-failed?method=mirror`, {
@@ -503,7 +512,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
     // Дожидаемся завершения докачки
     while (['queued', 'running'].includes(jobFatal.status)) {
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
     if (jobFatal._promise) await jobFatal._promise;
     await waitForPendingSaveState();

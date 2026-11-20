@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -6,11 +6,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const {
-  cleanupStalePartFiles,
-  cleanupJobPartFiles,
-  STALE_PART_MAX_AGE_MS,
-} = require('../lib/downloader.js');
+const { cleanupStalePartFiles, cleanupJobPartFiles, STALE_PART_MAX_AGE_MS } = require('../lib/downloader.js');
 
 describe('Безопасная очистка .part-файлов (cleanupStalePartFiles и cleanupJobPartFiles)', () => {
   let tempDir;
@@ -39,8 +35,14 @@ describe('Безопасная очистка .part-файлов (cleanupStalePa
     const removed = await cleanupStalePartFiles({ maxAgeMs: 60 * 1000 });
     assert.deepEqual(removed, []);
 
-    const exists1 = await fs.access(recentPart1).then(() => true).catch(() => false);
-    const exists2 = await fs.access(recentPart2).then(() => true).catch(() => false);
+    const exists1 = await fs
+      .access(recentPart1)
+      .then(() => true)
+      .catch(() => false);
+    const exists2 = await fs
+      .access(recentPart2)
+      .then(() => true)
+      .catch(() => false);
     assert.equal(exists1, true, 'Свежий .part файл 1 должен сохраниться');
     assert.equal(exists2, true, 'Свежий .part файл другого инстанса должен сохраниться');
   });
@@ -59,8 +61,14 @@ describe('Безопасная очистка .part-файлов (cleanupStalePa
     assert.equal(removed.length, 1);
     assert.equal(removed[0], '2001.crashed_job.part');
 
-    const staleExists = await fs.access(stalePart).then(() => true).catch(() => false);
-    const recentExists = await fs.access(recentPart).then(() => true).catch(() => false);
+    const staleExists = await fs
+      .access(stalePart)
+      .then(() => true)
+      .catch(() => false);
+    const recentExists = await fs
+      .access(recentPart)
+      .then(() => true)
+      .catch(() => false);
     assert.equal(staleExists, false, 'Устаревший файл должен быть удалён');
     assert.equal(recentExists, true, 'Свежий файл должен сохраниться');
   });
@@ -85,8 +93,14 @@ describe('Безопасная очистка .part-файлов (cleanupStalePa
     assert.equal(removed.length, 1);
     assert.equal(removed[0], '3002.dead_job.part');
 
-    const activeExists = await fs.access(activeOldPart).then(() => true).catch(() => false);
-    const staleExists = await fs.access(stalePart).then(() => true).catch(() => false);
+    const activeExists = await fs
+      .access(activeOldPart)
+      .then(() => true)
+      .catch(() => false);
+    const staleExists = await fs
+      .access(stalePart)
+      .then(() => true)
+      .catch(() => false);
     assert.equal(activeExists, true, 'Файл активной задачи не должен удаляться');
     assert.equal(staleExists, false, 'Мёртвый файл должен быть удалён');
   });
@@ -108,8 +122,20 @@ describe('Безопасная очистка .part-файлов (cleanupStalePa
     const removed = await cleanupStalePartFiles({ maxAgeMs: 1000 });
     assert.deepEqual(removed, ['4001.old.part']);
 
-    assert.equal(await fs.access(oszFile).then(() => true).catch(() => false), true);
-    assert.equal(await fs.access(jsonFile).then(() => true).catch(() => false), true);
+    assert.equal(
+      await fs
+        .access(oszFile)
+        .then(() => true)
+        .catch(() => false),
+      true,
+    );
+    assert.equal(
+      await fs
+        .access(jsonFile)
+        .then(() => true)
+        .catch(() => false),
+      true,
+    );
   });
 
   it('cleanupJobPartFiles удаляет файлы только указанной задачи и сохраняет файлы других задач', async () => {
@@ -123,9 +149,28 @@ describe('Безопасная очистка .part-файлов (cleanupStalePa
 
     await cleanupJobPartFiles({ id: 'my_target_job' });
 
-    assert.equal(await fs.access(myJobPart1).then(() => true).catch(() => false), false);
-    assert.equal(await fs.access(myJobPart2).then(() => true).catch(() => false), false);
-    assert.equal(await fs.access(otherJobPart).then(() => true).catch(() => false), true, 'Файл другой задачи должен остаться');
+    assert.equal(
+      await fs
+        .access(myJobPart1)
+        .then(() => true)
+        .catch(() => false),
+      false,
+    );
+    assert.equal(
+      await fs
+        .access(myJobPart2)
+        .then(() => true)
+        .catch(() => false),
+      false,
+    );
+    assert.equal(
+      await fs
+        .access(otherJobPart)
+        .then(() => true)
+        .catch(() => false),
+      true,
+      'Файл другой задачи должен остаться',
+    );
   });
 
   it('STALE_PART_MAX_AGE_MS по умолчанию составляет 24 часа', () => {

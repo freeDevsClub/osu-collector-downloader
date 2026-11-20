@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -21,12 +21,12 @@ describe('Утечка секретов в activeRedactions и ротация т
 
   before(async () => {
     serverInstance = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => serverInstance.once('listening', resolve));
+    await new Promise((resolve) => serverInstance.once('listening', resolve));
     serverPort = /** @type {import('node:net').AddressInfo} */ (serverInstance.address()).port;
   });
 
   after(async () => {
-    await new Promise(resolve => serverInstance.close(resolve));
+    await new Promise((resolve) => serverInstance.close(resolve));
     clearRedactions();
     sessions.clear();
   });
@@ -93,7 +93,7 @@ describe('Утечка секретов в activeRedactions и ротация т
     assert.equal(getActiveRedactionsCount(), 1);
     assert.equal(
       safeErrorMessage('s1: session_cookie_initial_111111111111 s2: session_cookie_second_2222222222222'),
-      's1: session_cookie_initial_111111111111 s2: [redacted]'
+      's1: session_cookie_initial_111111111111 s2: [redacted]',
     );
 
     const cookieHeader2 = res2.headers.get('set-cookie');

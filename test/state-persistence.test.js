@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -26,11 +26,7 @@ const {
   waitForPendingSaveState,
 } = require('../lib/jobs.js');
 
-const {
-  server,
-  bootstrapServer,
-  resetBootstrap,
-} = require('../server.js');
+const { server, bootstrapServer, resetBootstrap } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
 const { buildMirrorUrl } = require('../lib/config.js');
 
@@ -76,17 +72,19 @@ describe('Сохранение состояния очереди на диск (
       res.end();
     });
 
-    await new Promise(r => mockMirrorServer.listen(0, '127.0.0.1', r));
+    await new Promise((r) => mockMirrorServer.listen(0, '127.0.0.1', r));
     mockMirrorPort = /** @type {import('node:net').AddressInfo} */ (mockMirrorServer.address()).port;
 
-    setMirrorsForTest([{
-      id: 'mock_state_mirror',
-      label: 'Mock State Mirror',
-      build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
-    }]);
+    setMirrorsForTest([
+      {
+        id: 'mock_state_mirror',
+        label: 'Mock State Mirror',
+        build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
+      },
+    ]);
 
     appServer = server.listen(0, '127.0.0.1');
-    await new Promise(resolve => appServer.once('listening', resolve));
+    await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
   });
 
@@ -97,13 +95,13 @@ describe('Сохранение состояния очереди на диск (
       if (typeof appServer.closeAllConnections === 'function') {
         appServer.closeAllConnections();
       }
-      await new Promise(resolve => appServer.close(resolve));
+      await new Promise((resolve) => appServer.close(resolve));
     }
     if (mockMirrorServer) {
       if (typeof mockMirrorServer.closeAllConnections === 'function') {
         mockMirrorServer.closeAllConnections();
       }
-      await new Promise(resolve => mockMirrorServer.close(resolve));
+      await new Promise((resolve) => mockMirrorServer.close(resolve));
     }
     if (originalDownloadsEnv !== undefined) {
       process.env.DOWNLOADS_DIR = originalDownloadsEnv;
@@ -139,9 +137,7 @@ describe('Сохранение состояния очереди на диск (
       doneIds: new Set([100]),
       skipIds: new Set([200]),
       errIds: new Set([300]),
-      errorsById: new Map([
-        [300, { id: 300, name: 'Map 300', error: 'HTTP 404' }],
-      ]),
+      errorsById: new Map([[300, { id: 300, name: 'Map 300', error: 'HTTP 404' }]]),
       extraFailures: 0,
       mapsById: new Map([
         [100, { id: 100, label: 'Artist 1 - Title 1' }],
@@ -215,9 +211,34 @@ describe('Сохранение состояния очереди на диск (
   });
 
   it('десериализация сохраняет терминальные статусы finished, finished_with_errors и cancelled', () => {
-    const finishedData = { id: 'j_fin', setIds: [1], doneIds: [1], skipIds: [], errIds: [], status: 'finished', message: 'Готово' };
-    const failedData = { id: 'j_err', setIds: [2], doneIds: [], skipIds: [], errIds: [2], errors: [{ id: 2, name: 'M2', error: '404' }], status: 'finished_with_errors', message: 'Готово с ошибками' };
-    const cancelledData = { id: 'j_can', setIds: [3], doneIds: [], skipIds: [], errIds: [], status: 'cancelled', message: 'Остановлено' };
+    const finishedData = {
+      id: 'j_fin',
+      setIds: [1],
+      doneIds: [1],
+      skipIds: [],
+      errIds: [],
+      status: 'finished',
+      message: 'Готово',
+    };
+    const failedData = {
+      id: 'j_err',
+      setIds: [2],
+      doneIds: [],
+      skipIds: [],
+      errIds: [2],
+      errors: [{ id: 2, name: 'M2', error: '404' }],
+      status: 'finished_with_errors',
+      message: 'Готово с ошибками',
+    };
+    const cancelledData = {
+      id: 'j_can',
+      setIds: [3],
+      doneIds: [],
+      skipIds: [],
+      errIds: [],
+      status: 'cancelled',
+      message: 'Остановлено',
+    };
 
     const j1 = deserializeJob(finishedData);
     const j2 = deserializeJob(failedData);
@@ -342,7 +363,7 @@ describe('Сохранение состояния очереди на диск (
     resumeJob(restoredJob, { kind: 'mirror' }, 'manual');
 
     // Ждём завершения загрузки оставшихся наборов
-    await new Promise(resolve => {
+    await new Promise((resolve) => {
       const check = setInterval(() => {
         if (['finished', 'finished_with_errors'].includes(restoredJob.status)) {
           clearInterval(check);
@@ -376,9 +397,7 @@ describe('Сохранение состояния очереди на диск (
       doneIds: new Set([701]),
       skipIds: new Set(),
       errIds: new Set([702]),
-      errorsById: new Map([
-        [702, { id: 702, name: 'Map 702', error: 'HTTP 502' }],
-      ]),
+      errorsById: new Map([[702, { id: 702, name: 'Map 702', error: 'HTTP 502' }]]),
       extraFailures: 0,
       mapsById: new Map([
         [701, { id: 701, label: 'Map 701' }],
@@ -405,7 +424,7 @@ describe('Сохранение состояния очереди на диск (
     // Пользователь нажимает «Повторить ошибки»
     retryFailedJob(restoredJob, { kind: 'mirror' });
 
-    await new Promise(resolve => {
+    await new Promise((resolve) => {
       const check = setInterval(() => {
         if (['finished', 'finished_with_errors'].includes(restoredJob.status)) {
           clearInterval(check);
@@ -445,10 +464,12 @@ describe('Сохранение состояния очереди на диск (
 
   it('эндпоинт GET /api/downloads/active возвращает 404, если задачи нет, и 200 с состоянием, если задача активна или на паузе', async () => {
     // 1. Нет активной задачи -> 404
-    const resEmpty = await new Promise(resolve => {
-      http.get(`http://127.0.0.1:${appPort}/api/downloads/active`, res => {
+    const resEmpty = await new Promise((resolve) => {
+      http.get(`http://127.0.0.1:${appPort}/api/downloads/active`, (res) => {
         let body = '';
-        res.on('data', chunk => { body += chunk; });
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
         res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(body) }));
       });
     });
@@ -475,10 +496,12 @@ describe('Сохранение состояния очереди на диск (
     jobs.set(job.id, job);
     setActiveJob(job);
 
-    const resActive = await new Promise(resolve => {
-      http.get(`http://127.0.0.1:${appPort}/api/downloads/active`, res => {
+    const resActive = await new Promise((resolve) => {
+      http.get(`http://127.0.0.1:${appPort}/api/downloads/active`, (res) => {
         let body = '';
-        res.on('data', chunk => { body += chunk; });
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
         res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(body) }));
       });
     });
@@ -522,10 +545,12 @@ describe('Сохранение состояния очереди на диск (
     // 3. Запускаем bootstrapServer (дисковое I/O) и параллельно делаем запрос
     const bootPromise = bootstrapServer();
 
-    const res = await new Promise(resolve => {
-      http.get(`http://127.0.0.1:${appPort}/api/downloads/active`, httpRes => {
+    const res = await new Promise((resolve) => {
+      http.get(`http://127.0.0.1:${appPort}/api/downloads/active`, (httpRes) => {
         let body = '';
-        httpRes.on('data', chunk => { body += chunk; });
+        httpRes.on('data', (chunk) => {
+          body += chunk;
+        });
         httpRes.on('end', () => resolve({ status: httpRes.statusCode, data: JSON.parse(body) }));
       });
     });
@@ -600,9 +625,7 @@ describe('Сохранение состояния очереди на диск (
       id: 'job_legacy_format',
       method: 'mirror',
       setIds: [12345],
-      maps: [
-        { id: 12345, label: 'Camellia — crystallized' },
-      ],
+      maps: [{ id: 12345, label: 'Camellia — crystallized' }],
       createdAt: 1700000000000,
     };
 
@@ -632,7 +655,7 @@ describe('Сохранение состояния очереди на диск (
     assert.equal(s1.createdAt, initialTime);
 
     // 2. Имитируем задержку времени и повторную сериализацию
-    await new Promise(r => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 20));
     const s2 = serializeJob(job);
     assert.equal(s2.createdAt, initialTime, 'createdAt не должен сдвигаться при повторных сохранениях');
 
@@ -648,7 +671,11 @@ describe('Сохранение состояния очереди на диск (
     const jobWithoutCreatedAt = { id: 'job_no_created_at', setIds: [2] };
     const s3 = serializeJob(jobWithoutCreatedAt);
     assert.ok(typeof s3.createdAt === 'number' && s3.createdAt > 0);
-    assert.equal(jobWithoutCreatedAt.createdAt, s3.createdAt, 'serializeJob должен зафиксировать createdAt на объекте задачи');
+    assert.equal(
+      jobWithoutCreatedAt.createdAt,
+      s3.createdAt,
+      'serializeJob должен зафиксировать createdAt на объекте задачи',
+    );
   });
 
   it('saveStateToDisk сохраняет компактный JSON без отступов и лишних переводов строк', async () => {
@@ -729,9 +756,7 @@ describe('Сохранение состояния очереди на диск (
   });
 
   it('serializeJob корректно инвалидирует и обновляет кеш метаданных при фоновом обогащении карт', () => {
-    const mapsById = new Map([
-      [10, { id: 10, label: 'Набор 10', title: null, artist: null, creator: null }],
-    ]);
+    const mapsById = new Map([[10, { id: 10, label: 'Набор 10', title: null, artist: null, creator: null }]]);
 
     const job = {
       id: 'job_cache_invalidation_test',

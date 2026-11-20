@@ -1,0 +1,6 @@
+node_modules/
+downloads/
+data/
+.settings.json
+.state.json
+package-lock.json

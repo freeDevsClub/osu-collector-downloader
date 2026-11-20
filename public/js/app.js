@@ -1,10 +1,10 @@
 // @ts-check
 import { byId, setStatus } from './utils.js';
-import { api, renderSessionState, initSessionUi, isSessionConnected } from './api.js';
-import { loadMirrors, renderMirrors, initMirrorsUi } from './components/mirrors.js';
+import { api, renderSessionState, initSessionUi } from './api.js';
+import { loadMirrors, initMirrorsUi } from './components/mirrors.js';
 import { loadOsuSettings, initSettingsUi } from './components/settings.js';
-import { renderCollection, setCollection, getCollection, recheckCollectionOsu, initCollectionUi } from './components/collection.js';
-import { updateDownloadButton, restoreJob, initDownloadsUi, getActiveJob, updateJob, finishJob } from './components/downloads.js';
+import { recheckCollectionOsu, initCollectionUi } from './components/collection.js';
+import { updateDownloadButton, restoreJob, initDownloadsUi, getActiveJob } from './components/downloads.js';
 
 export * from './utils.js';
 export * from './api.js';
@@ -20,11 +20,7 @@ export async function initialize() {
   initCollectionUi({ updateDownloadButton });
   initDownloadsUi({ loadMirrors });
 
-  const [sessionRes] = await Promise.allSettled([
-    api('/api/session'),
-    loadMirrors(),
-    loadOsuSettings(),
-  ]);
+  const [sessionRes] = await Promise.allSettled([api('/api/session'), loadMirrors(), loadOsuSettings()]);
 
   if (sessionRes.status === 'fulfilled') {
     renderSessionState(Boolean(sessionRes.value?.connected), updateDownloadButton);
@@ -35,7 +31,11 @@ export async function initialize() {
     if (error?.name === 'TimeoutError') {
       setStatus(collectionStatus, 'Локальный сервер не отвечает — он запущен?', 'error');
     } else {
-      setStatus(collectionStatus, `Не удалось подключиться к локальному серверу: ${error?.message || 'ошибка сети'}`, 'error');
+      setStatus(
+        collectionStatus,
+        `Не удалось подключиться к локальному серверу: ${error?.message || 'ошибка сети'}`,
+        'error',
+      );
     }
   }
 
@@ -46,4 +46,3 @@ export async function initialize() {
 if (typeof window !== 'undefined') {
   initialize();
 }
-

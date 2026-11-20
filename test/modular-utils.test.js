@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -156,16 +156,22 @@ describe('Модульные утилиты (lib/logger, lib/errors, lib/utils/*
 
     it('readJson отклоняет невалидный JSON', async () => {
       const stream = Readable.from(['{not a json']);
-      await assert.rejects(() => readJson(/** @type {any} */ (stream)), (err) => {
-        return err instanceof HttpError && err.status === 400;
-      });
+      await assert.rejects(
+        () => readJson(/** @type {any} */ (stream)),
+        (err) => {
+          return err instanceof HttpError && err.status === 400;
+        },
+      );
     });
 
     it('readJson отклоняет превышение maxBody с кодом 413', async () => {
       const stream = Readable.from(['{"a":"' + 'x'.repeat(200) + '"}']);
-      await assert.rejects(() => readJson(/** @type {any} */ (stream), { maxBody: 50 }), (err) => {
-        return err instanceof HttpError && err.status === 413;
-      });
+      await assert.rejects(
+        () => readJson(/** @type {any} */ (stream), { maxBody: 50 }),
+        (err) => {
+          return err instanceof HttpError && err.status === 413;
+        },
+      );
     });
   });
 });
