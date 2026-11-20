@@ -32,6 +32,7 @@ describe('Оценка и проверка свободного места на 
   let tempDownloadsDir;
   let tempSongsDir;
   let originalDownloadsEnv;
+  let originalDataEnv;
 
   beforeEach(async () => {
     tempBaseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'disk-space-test-'));
@@ -41,7 +42,9 @@ describe('Оценка и проверка свободного места на 
     await fs.mkdir(tempSongsDir, { recursive: true });
 
     originalDownloadsEnv = process.env.DOWNLOADS_DIR;
+    originalDataEnv = process.env.DATA_DIR;
     process.env.DOWNLOADS_DIR = tempDownloadsDir;
+    process.env.DATA_DIR = tempDownloadsDir;
 
     invalidateCachedSongs();
     invalidateCachedDownloads();
@@ -49,6 +52,8 @@ describe('Оценка и проверка свободного места на 
 
   afterEach(async () => {
     process.env.DOWNLOADS_DIR = originalDownloadsEnv;
+    if (originalDataEnv !== undefined) process.env.DATA_DIR = originalDataEnv;
+    else delete process.env.DATA_DIR;
     invalidateCachedSongs();
     invalidateCachedDownloads();
     loadSettings();

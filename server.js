@@ -11,6 +11,7 @@ const {
   PORT,
   ROOT,
   getDownloadsDir,
+  getDataDir,
   MAX_BODY,
   MIRRORS,
   DEFAULT_MIRRORS,
@@ -103,6 +104,9 @@ const {
 
 const {
   jobs,
+  Job,
+  JobStateMachine,
+  createJob,
   jobEvents,
   emitJobUpdate,
   getActiveJob,
@@ -542,33 +546,18 @@ async function handleApi(req, res, url) {
       isPrepared = true;
     }
 
-    const job = {
-      id: crypto.randomBytes(16).toString('hex'),
+    const job = createJob({
       method,
       noVideo,
       collectionId,
       collectionName,
       setIds,
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
       mapsById,
-      currentBytes: 0,
-      currentTotalBytes: null,
-      currentPercent: 0,
-      currentMirror: null,
-      autoResumeAt: null,
-      autoResumeCount: 0,
-      autoResumeTimer: null,
       abortController: new AbortController(),
-      currentSetId: null,
       status: 'preparing',
       message: isPrepared ? 'Подготовка к загрузке…' : 'Получение списка карт из osu!Collector…',
-      createdAt: Date.now(),
       _prepared: isPrepared,
-    };
+    });
     setActiveJob(job);
     jobs.set(job.id, job);
 
@@ -943,6 +932,7 @@ function resetBootstrap() {
 function bootstrapServer() {
   if (!bootstrapPromise) {
     bootstrapPromise = (async () => {
+      await fs.promises.mkdir(getDataDir(), { recursive: true });
       await fs.promises.mkdir(getDownloadsDir(), { recursive: true });
       await cleanupStalePartFiles();
       await loadStateFromDisk();
@@ -982,6 +972,7 @@ async function startServer(port = PORT, host = HOST, options = {}) {
         url: `http://${host}:${port}/?token=${getApiToken()}`,
         node: process.version,
         downloadsDirectory: getDownloadsDir(),
+        dataDirectory: getDataDir(),
         downloadMirrors: MIRRORS.map(mirror => mirror.id),
       });
       log('info', 'server.hint', { hint: `Скачивание идёт через зеркала: ${MIRRORS.map(mirror => mirror.label).join(', ')}.` });
@@ -1033,7 +1024,11 @@ if (require.main === module) {
 
 module.exports = {
   server,
+  Job,
+  JobStateMachine,
+  createJob,
   getDownloadsDir,
+  getDataDir,
   extractCollectionId,
   parseRetryAfter,
   verifyZipFile,

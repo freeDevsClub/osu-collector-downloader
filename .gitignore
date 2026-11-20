@@ -3,10 +3,12 @@ node_modules/
 
 # Downloads & Beatmap archives
 downloads/
+data/
 *.osz
 *.part
 *.tmp
 .state.json
+.settings.json
 
 # Runtime and logs
 server.pid

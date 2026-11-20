@@ -245,16 +245,19 @@ describe('Интеграция с локальной директорией osu!
   let mockSongsDir;
   let mockDownloadsDir;
   let originalDownloadsEnv;
+  let originalDataEnv;
   let originalNodeEnv;
 
   before(async () => {
     originalDownloadsEnv = process.env.DOWNLOADS_DIR;
+    originalDataEnv = process.env.DATA_DIR;
     originalNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'test';
     tempBaseDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'osu-songs-test-'));
     mockSongsDir = path.join(tempBaseDir, 'Songs');
     mockDownloadsDir = path.join(tempBaseDir, 'downloads');
     process.env.DOWNLOADS_DIR = mockDownloadsDir;
+    process.env.DATA_DIR = mockDownloadsDir;
     await fs.promises.mkdir(mockSongsDir, { recursive: true });
     await fs.promises.mkdir(mockDownloadsDir, { recursive: true });
 
@@ -280,6 +283,11 @@ describe('Интеграция с локальной директорией osu!
       process.env.DOWNLOADS_DIR = originalDownloadsEnv;
     } else {
       delete process.env.DOWNLOADS_DIR;
+    }
+    if (originalDataEnv !== undefined) {
+      process.env.DATA_DIR = originalDataEnv;
+    } else {
+      delete process.env.DATA_DIR;
     }
     if (originalNodeEnv !== undefined) {
       process.env.NODE_ENV = originalNodeEnv;

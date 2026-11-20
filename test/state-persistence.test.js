@@ -43,6 +43,8 @@ describe('Сохранение состояния очереди на диск (
   let mockMirrorPort;
   let tempDir;
   let originalMirrors;
+  let originalDataEnv;
+  let originalDownloadsEnv;
   const requestedSets = [];
 
   const validZipBuffer = Buffer.from([
@@ -54,7 +56,10 @@ describe('Сохранение состояния очереди на диск (
 
   before(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'state-persistence-test-'));
+    originalDownloadsEnv = process.env.DOWNLOADS_DIR;
+    originalDataEnv = process.env.DATA_DIR;
     process.env.DOWNLOADS_DIR = tempDir;
+    process.env.DATA_DIR = tempDir;
 
     mockMirrorServer = http.createServer((req, res) => {
       const match = req.url?.match(/\/d\/(\d+)/);
@@ -104,6 +109,16 @@ describe('Сохранение состояния очереди на диск (
     if (originalMirrors) {
       MIRRORS.length = 0;
       MIRRORS.push(...originalMirrors);
+    }
+    if (originalDownloadsEnv !== undefined) {
+      process.env.DOWNLOADS_DIR = originalDownloadsEnv;
+    } else {
+      delete process.env.DOWNLOADS_DIR;
+    }
+    if (originalDataEnv !== undefined) {
+      process.env.DATA_DIR = originalDataEnv;
+    } else {
+      delete process.env.DATA_DIR;
     }
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
