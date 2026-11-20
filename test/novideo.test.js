@@ -7,13 +7,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const {
-  buildMirrorUrl,
-  appendNoVideo,
-  DEFAULT_MIRRORS,
-  downloadSet,
-} = require('../server.js');
-const { estimateRequiredDiskSpace } = require('../lib/downloader.js');
+const { buildMirrorUrl, DEFAULT_MIRRORS } = require('../lib/config.js');
+const { downloadSet, appendNoVideo, estimateRequiredDiskSpace } = require('../lib/downloader.js');
 const { safeJobForClient } = require('../lib/jobs.js');
 
 describe('Режим скачивания «Без видео» (No Video)', () => {

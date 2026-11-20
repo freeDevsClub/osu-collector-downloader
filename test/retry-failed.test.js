@@ -18,13 +18,13 @@ const {
   setActiveJob,
   waitForPendingSaveState,
 } = require('../lib/jobs.js');
+const { server } = require('../server.js');
 const {
-  server,
-  MIRRORS,
+  setMirrorsForTest,
+  resetMirrorsForTest,
   mirrorCooldowns,
-  buildMirrorUrl,
-} = require('../server.js');
-const { PORT } = require('../lib/config.js');
+} = require('../lib/mirrors.js');
+const { PORT, buildMirrorUrl } = require('../lib/config.js');
 
 describe('Повтор загрузки наборов с ошибками (Retry Failed Only)', () => {
   let appServer;
@@ -72,13 +72,11 @@ describe('Повтор загрузки наборов с ошибками (Retr
     await new Promise(r => mockMirrorServer.listen(0, '127.0.0.1', r));
     mockMirrorPort = /** @type {import('node:net').AddressInfo} */ (mockMirrorServer.address()).port;
 
-    originalMirrors = [...MIRRORS];
-    MIRRORS.length = 0;
-    MIRRORS.push({
+    setMirrorsForTest([{
       id: 'mock_retry_mirror',
       label: 'Mock Retry Mirror',
       build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
-    });
+    }]);
 
     appServer = server.listen(0, '127.0.0.1');
     await new Promise(resolve => appServer.once('listening', resolve));
@@ -87,15 +85,12 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
   after(async () => {
     await waitForPendingSaveState();
+    resetMirrorsForTest();
     if (appServer) {
       await new Promise(resolve => appServer.close(resolve));
     }
     if (mockMirrorServer) {
       await new Promise(resolve => mockMirrorServer.close(resolve));
-    }
-    if (originalMirrors) {
-      MIRRORS.length = 0;
-      MIRRORS.push(...originalMirrors);
     }
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -328,7 +323,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
     // 2. Зеркало остывает: убираем 429 и очищаем остывание
     mockStatusBySetId.delete(702);
-    MIRRORS.forEach(m => mirrorCooldowns.delete(m.id));
+    mirrorCooldowns.clear();
 
     // Нажимаем «Продолжить» (resumeJob)
     resumeJob(job, { kind: 'mirror' }, 'manual');

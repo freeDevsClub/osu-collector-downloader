@@ -15,9 +15,9 @@ const {
 const {
   collectionCache,
 } = require('../lib/collector.js');
+const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
 const {
   server,
-  MIRRORS,
 } = require('../server.js');
 
 describe('Мгновенный ответ POST /api/downloads со статусом preparing и фоновая подготовка', () => {
@@ -67,12 +67,11 @@ describe('Мгновенный ответ POST /api/downloads со статус�
     const mirrorAddr = /** @type {import('node:net').AddressInfo} */ (mirrorServer.address());
     mirrorPort = mirrorAddr.port;
 
-    MIRRORS.length = 0;
-    MIRRORS.push({
+    setMirrorsForTest([{
       id: 'mock_mirror',
       label: 'Mock Mirror',
       build: id => `http://127.0.0.1:${mirrorPort}/d/${id}`,
-    });
+    }]);
 
     appServer = server.listen(0, '127.0.0.1');
     await new Promise(resolve => appServer.once('listening', resolve));
@@ -83,6 +82,7 @@ describe('Мгновенный ответ POST /api/downloads со статус�
   });
 
   after(async () => {
+    resetMirrorsForTest();
     globalThis.fetch = originalFetch;
     if (appServer) {
       await new Promise(resolve => appServer.close(resolve));

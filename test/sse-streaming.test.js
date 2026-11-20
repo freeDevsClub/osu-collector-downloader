@@ -15,12 +15,9 @@ const {
   setActiveJob,
   safeJobForClient,
 } = require('../lib/jobs.js');
-const {
-  server,
-  MIRRORS,
-  buildMirrorUrl,
-} = require('../server.js');
-const { PORT } = require('../lib/config.js');
+const { server } = require('../server.js');
+const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
+const { PORT, buildMirrorUrl } = require('../lib/config.js');
 
 describe('Стриминг событий через Server-Sent Events (SSE)', () => {
   let appServer;
@@ -51,13 +48,11 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
     await new Promise(r => mockMirrorServer.listen(0, '127.0.0.1', r));
     mockMirrorPort = /** @type {import('node:net').AddressInfo} */ (mockMirrorServer.address()).port;
 
-    originalMirrors = [...MIRRORS];
-    MIRRORS.length = 0;
-    MIRRORS.push({
+    setMirrorsForTest([{
       id: 'mock_sse_mirror',
       label: 'Mock SSE Mirror',
       build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
-    });
+    }]);
 
     appServer = server.listen(0, '127.0.0.1');
     await new Promise(resolve => appServer.once('listening', resolve));
@@ -65,6 +60,7 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   });
 
   after(async () => {
+    resetMirrorsForTest();
     if (appServer) {
       if (typeof appServer.closeAllConnections === 'function') {
         appServer.closeAllConnections();
@@ -76,10 +72,6 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
         mockMirrorServer.closeAllConnections();
       }
       await new Promise(resolve => mockMirrorServer.close(resolve));
-    }
-    if (originalMirrors) {
-      MIRRORS.length = 0;
-      MIRRORS.push(...originalMirrors);
     }
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});

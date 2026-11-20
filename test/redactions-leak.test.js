@@ -3,6 +3,7 @@
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
+const { server } = require('../server.js');
 const {
   sessions,
   pruneSessions,
@@ -11,8 +12,7 @@ const {
   clearRedactions,
   getActiveRedactionsCount,
   safeErrorMessage,
-  server,
-} = require('../server.js');
+} = require('../lib/security.js');
 const { PORT } = require('../lib/config.js');
 
 describe('Утечка секретов в activeRedactions и ротация токенов', () => {

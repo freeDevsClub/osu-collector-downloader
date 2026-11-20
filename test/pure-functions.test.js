@@ -6,12 +6,12 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
+const { extractCollectionId } = require('../lib/collector.js');
+const { parseRetryAfter } = require('../lib/mirrors.js');
+const { verifyZipFile } = require('../lib/downloader.js');
+const { jobCounters } = require('../lib/jobs.js');
+const { formatBytes, pluralizeRu, formatPluralRu } = require('../lib/utils/format.js');
 const {
-  extractCollectionId,
-  parseRetryAfter,
-  verifyZipFile,
-  jobCounters,
-  formatBytes,
   safeErrorMessage,
   addRedaction,
   removeRedaction,
@@ -21,10 +21,8 @@ const {
   isPrivateIPv4,
   isPrivateIPv6,
   redirectHostAllowed,
-  HttpError,
-  pluralizeRu,
-  formatPluralRu,
-} = require('../server.js');
+} = require('../lib/security.js');
+const { HttpError } = require('../lib/errors.js');
 
 describe('extractCollectionId', () => {
   it('извлекает ID из полного HTTPS URL osu!Collector', () => {

@@ -8,6 +8,8 @@ const net = require('node:net');
 const {
   server,
   startServer,
+} = require('../server.js');
+const {
   getApiToken,
   setApiToken,
   resetApiToken,
@@ -20,7 +22,7 @@ const {
   verifyApiToken,
   localApiTokenCookie,
   safeErrorMessage,
-} = require('../server.js');
+} = require('../lib/security.js');
 
 const { PORT } = require('../lib/config.js');
 

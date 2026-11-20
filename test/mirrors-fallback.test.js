@@ -7,9 +7,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
+const { downloadFromMirrors } = require('../lib/downloader.js');
 const {
-  downloadFromMirrors,
-  MIRRORS,
   mirrorCooldowns,
   parseRetryAfter,
   getMirrorCooldownDefaultMs,
@@ -18,7 +17,9 @@ const {
   MIRROR_COOLDOWN_DEFAULT_MS,
   MIRROR_COOLDOWN_MAX_MS,
   MIRROR_COOLDOWN_WAIT_MAX_MS,
-} = require('../server.js');
+  setMirrorsForTest,
+  resetMirrorsForTest,
+} = require('../lib/mirrors.js');
 
 describe('Интеграционные тесты fallback между зеркалами', () => {
   let s1, s2, s3;
@@ -64,13 +65,11 @@ describe('Интеграционные тесты fallback между зерка
     await new Promise(r => s3.listen(0, '127.0.0.1', r));
     port3 = /** @type {import('node:net').AddressInfo} */ (s3.address()).port;
 
-    originalMirrors = [...MIRRORS];
+    resetMirrorsForTest();
   });
 
   after(async () => {
-    MIRRORS.length = 0;
-    MIRRORS.push(...originalMirrors);
-    mirrorCooldowns.clear();
+    resetMirrorsForTest();
     await Promise.all([
       new Promise(r => s1.close(r)),
       new Promise(r => s2.close(r)),
@@ -82,13 +81,11 @@ describe('Интеграционные тесты fallback между зерка
   });
 
   it('успешно переключается с 429 и 500 на работающее 3-е зеркало', async () => {
-    mirrorCooldowns.clear();
-    MIRRORS.length = 0;
-    MIRRORS.push(
+    setMirrorsForTest([
       { id: 'm1_429', label: 'Mirror 1 (429)', build: id => `http://127.0.0.1:${port1}/d/${id}` },
       { id: 'm2_500', label: 'Mirror 2 (500)', build: id => `http://127.0.0.1:${port2}/d/${id}` },
       { id: 'm3_200', label: 'Mirror 3 (200)', build: id => `http://127.0.0.1:${port3}/d/${id}` }
-    );
+    ]);
 
     const job = {
       id: 'test_job_1',
@@ -122,7 +119,6 @@ describe('Интеграционные тесты fallback между зерка
   });
 
   it('отклоняет набор и сообщает missing, если все зеркала возвращают 404', async () => {
-    mirrorCooldowns.clear();
     // Создаем сервер, отдающий 404
     const s404 = http.createServer((req, res) => {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -132,11 +128,10 @@ describe('Интеграционные тесты fallback между зерка
     const addr = /** @type {import('node:net').AddressInfo} */ (s404.address());
     const port404 = addr.port;
 
-    MIRRORS.length = 0;
-    MIRRORS.push(
+    setMirrorsForTest([
       { id: 'm_404_a', label: 'Mirror 404 A', build: id => `http://127.0.0.1:${port404}/d/${id}` },
       { id: 'm_404_b', label: 'Mirror 404 B', build: id => `http://127.0.0.1:${port404}/d/${id}` }
-    );
+    ]);
 
     const job = {
       id: 'test_job_404',
@@ -158,12 +153,10 @@ describe('Интеграционные тесты fallback между зерка
   });
 
   it('ставит на паузу (allCooldown), если все зеркала возвращают 429', async () => {
-    mirrorCooldowns.clear();
-    MIRRORS.length = 0;
-    MIRRORS.push(
+    setMirrorsForTest([
       { id: 'm_429_a', label: 'Mirror 429 A', build: id => `http://127.0.0.1:${port1}/d/${id}` },
       { id: 'm_429_b', label: 'Mirror 429 B', build: id => `http://127.0.0.1:${port1}/d/${id}` }
-    );
+    ]);
 
     const job = {
       id: 'test_job_cooldown',
@@ -201,10 +194,9 @@ describe('Интеграционные тесты fallback между зерка
       await new Promise(r => s429NoHeader.listen(0, '127.0.0.1', () => r(null)));
       const port429NoHeader = /** @type {import('node:net').AddressInfo} */ (s429NoHeader.address()).port;
 
-      MIRRORS.length = 0;
-      MIRRORS.push(
+      setMirrorsForTest([
         { id: 'm_dyn_default', label: 'Mirror Dynamic Default', build: id => `http://127.0.0.1:${port429NoHeader}/d/${id}` }
-      );
+      ]);
 
       const job = {
         id: 'test_job_dyn_default',
@@ -243,13 +235,10 @@ describe('Интеграционные тесты fallback между зерка
     try {
       // 1. Лимит ожидания 1000 мс: кулдаун 4000 мс превышает лимит -> не ждём в цикле, сразу allCooldown
       process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = '1000';
-      mirrorCooldowns.clear();
-      mirrorCooldowns.set('m_wait_test', Date.now() + 4000);
-
-      MIRRORS.length = 0;
-      MIRRORS.push(
+      setMirrorsForTest([
         { id: 'm_wait_test', label: 'Wait Test Mirror', build: id => `http://127.0.0.1:${port3}/d/${id}` }
-      );
+      ]);
+      mirrorCooldowns.set('m_wait_test', Date.now() + 4000);
 
       const job = {
         id: 'test_job_wait_max',

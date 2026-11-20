@@ -4,8 +4,8 @@ const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 
-const { server, jobs } = require('../server.js');
-const { setActiveJob, getActiveJob } = require('../lib/jobs.js');
+const { server } = require('../server.js');
+const { jobs, setActiveJob, getActiveJob } = require('../lib/jobs.js');
 const { PORT } = require('../lib/config.js');
 
 describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn suppression)', () => {

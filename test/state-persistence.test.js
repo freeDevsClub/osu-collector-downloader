@@ -28,11 +28,11 @@ const {
 
 const {
   server,
-  MIRRORS,
-  buildMirrorUrl,
   bootstrapServer,
   resetBootstrap,
 } = require('../server.js');
+const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
+const { buildMirrorUrl } = require('../lib/config.js');
 
 const { buildBeatmapFolderName } = require('../lib/osu.js');
 
@@ -79,13 +79,11 @@ describe('Сохранение состояния очереди на диск (
     await new Promise(r => mockMirrorServer.listen(0, '127.0.0.1', r));
     mockMirrorPort = /** @type {import('node:net').AddressInfo} */ (mockMirrorServer.address()).port;
 
-    originalMirrors = [...MIRRORS];
-    MIRRORS.length = 0;
-    MIRRORS.push({
+    setMirrorsForTest([{
       id: 'mock_state_mirror',
       label: 'Mock State Mirror',
       build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
-    });
+    }]);
 
     appServer = server.listen(0, '127.0.0.1');
     await new Promise(resolve => appServer.once('listening', resolve));
@@ -94,6 +92,7 @@ describe('Сохранение состояния очереди на диск (
 
   after(async () => {
     await waitForPendingSaveState();
+    resetMirrorsForTest();
     if (appServer) {
       if (typeof appServer.closeAllConnections === 'function') {
         appServer.closeAllConnections();
@@ -105,10 +104,6 @@ describe('Сохранение состояния очереди на диск (
         mockMirrorServer.closeAllConnections();
       }
       await new Promise(resolve => mockMirrorServer.close(resolve));
-    }
-    if (originalMirrors) {
-      MIRRORS.length = 0;
-      MIRRORS.push(...originalMirrors);
     }
     if (originalDownloadsEnv !== undefined) {
       process.env.DOWNLOADS_DIR = originalDownloadsEnv;

@@ -11,10 +11,12 @@ const {
   acquireMirrorSlot,
   isMirrorBusy,
   resetMirrorSlots,
-  DOWNLOAD_CONCURRENCY,
-  MIRRORS,
   mirrorCooldowns,
-} = require('../server.js');
+  setMirrorsForTest,
+  resetMirrorsForTest,
+  MIRRORS,
+} = require('../lib/mirrors.js');
+const { DOWNLOAD_CONCURRENCY } = require('../lib/config.js');
 const { runJob, safeJobForClient } = require('../lib/jobs.js');
 
 describe('Worker Pool и per-mirror concurrency', () => {
@@ -80,14 +82,11 @@ describe('Worker Pool и per-mirror concurrency', () => {
     port2 = /** @type {import('node:net').AddressInfo} */ (s2.address()).port;
     port3 = /** @type {import('node:net').AddressInfo} */ (s3.address()).port;
 
-    originalMirrors = [...MIRRORS];
+    resetMirrorsForTest();
   });
 
   after(async () => {
-    MIRRORS.length = 0;
-    MIRRORS.push(...originalMirrors);
-    resetMirrorSlots();
-    mirrorCooldowns.clear();
+    resetMirrorsForTest();
     await Promise.all([
       new Promise(r => s1.close(r)),
       new Promise(r => s2.close(r)),
@@ -155,12 +154,11 @@ describe('Worker Pool и per-mirror concurrency', () => {
   });
 
   it('параллельно скачивает 3 набора через 3 зеркала, не превышая 1 запрос на зеркало', async () => {
-    MIRRORS.length = 0;
-    MIRRORS.push(
+    setMirrorsForTest([
       { id: 'm1', label: 'Mirror 1', build: id => `http://127.0.0.1:${port1}/d/${id}` },
       { id: 'm2', label: 'Mirror 2', build: id => `http://127.0.0.1:${port2}/d/${id}` },
       { id: 'm3', label: 'Mirror 3', build: id => `http://127.0.0.1:${port3}/d/${id}` }
-    );
+    ]);
 
     const job = {
       id: 'job_parallel_1',
@@ -272,11 +270,10 @@ describe('Worker Pool и per-mirror concurrency', () => {
   });
 
   it('выбирает свободное зеркало вместо блокировки на занятом зеркале', async () => {
-    MIRRORS.length = 0;
-    MIRRORS.push(
+    setMirrorsForTest([
       { id: 'm1', label: 'Mirror 1', build: id => `http://127.0.0.1:${port1}/d/${id}` },
       { id: 'm2', label: 'Mirror 2', build: id => `http://127.0.0.1:${port2}/d/${id}` }
-    );
+    ]);
 
     // Захватываем m1 вручную, делая его занятым
     const releaseM1 = await acquireMirrorSlot(MIRRORS[0]);

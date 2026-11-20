@@ -12,8 +12,8 @@ const {
 const {
   safeDownloadFetch,
   downloadSet,
-  buildMirrorUrl,
-} = require('../server.js');
+} = require('../lib/downloader.js');
+const { buildMirrorUrl } = require('../lib/config.js');
 
 describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и загрузчике карт', () => {
   test('mirrorRedirectAllowed отклоняет небезопасный HTTP-протокол', async () => {

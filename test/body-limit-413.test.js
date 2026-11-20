@@ -6,7 +6,8 @@ const http = require('node:http');
 const net = require('node:net');
 const { Readable } = require('node:stream');
 
-const { server, readJson, closeStreamOrSocket } = require('../server.js');
+const { server } = require('../server.js');
+const { readJson, closeStreamOrSocket } = require('../lib/utils/http.js');
 const { PORT, MAX_BODY, HttpError } = require('../lib/config.js');
 
 describe('Лимит размера тела запроса (HTTP 413) и закрытие сокетов в readJson', () => {

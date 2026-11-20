@@ -16,13 +16,9 @@ const {
   jobCounters,
 } = require('../lib/jobs.js');
 
-const {
-  server,
-  MIRRORS,
-  buildMirrorUrl,
-} = require('../server.js');
-
-const { PORT } = require('../lib/config.js');
+const { server } = require('../server.js');
+const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
+const { PORT, buildMirrorUrl } = require('../lib/config.js');
 
 describe('Возобновление paused-задачи и обновление настроек (Resume Settings)', () => {
   let appServer;
@@ -59,13 +55,11 @@ describe('Возобновление paused-задачи и обновление
     await new Promise(r => mockMirrorServer.listen(0, '127.0.0.1', r));
     mockMirrorPort = /** @type {import('node:net').AddressInfo} */ (mockMirrorServer.address()).port;
 
-    originalMirrors = [...MIRRORS];
-    MIRRORS.length = 0;
-    MIRRORS.push({
+    setMirrorsForTest([{
       id: 'mock_resume_mirror',
       label: 'Mock Resume Mirror',
       build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${mockMirrorPort}/d/{id}`, id, opts),
-    });
+    }]);
 
     appServer = server.listen(0, '127.0.0.1');
     await new Promise(resolve => appServer.once('listening', resolve));
@@ -73,14 +67,13 @@ describe('Возобновление paused-задачи и обновление
   });
 
   after(async () => {
+    resetMirrorsForTest();
     if (appServer) {
       await new Promise(resolve => appServer.close(resolve));
     }
     if (mockMirrorServer) {
       await new Promise(resolve => mockMirrorServer.close(resolve));
     }
-    MIRRORS.length = 0;
-    MIRRORS.push(...originalMirrors);
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
     } catch {}

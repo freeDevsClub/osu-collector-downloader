@@ -6,7 +6,8 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { server, sessions, getActiveRedactionsCount } = require('../server.js');
+const { server } = require('../server.js');
+const { sessions, getActiveRedactionsCount } = require('../lib/security.js');
 const { PORT, ROOT } = require('../lib/config.js');
 
 describe('Безопасность сессий и cookie osu_session (/api/session)', () => {

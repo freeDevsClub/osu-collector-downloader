@@ -3,6 +3,7 @@
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
+const { server } = require('../server.js');
 const {
   fetchCollection,
   collectionCache,
@@ -10,8 +11,7 @@ const {
   COLLECTION_CACHE_TTL_MS,
   COLLECTION_CACHE_DEGRADED_TTL_MS,
   populateMetadataInBackground,
-  server,
-} = require('../server.js');
+} = require('../lib/collector.js');
 const {
   PORT,
   PAGINATION_PAGE_LIMIT,
