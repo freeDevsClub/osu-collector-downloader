@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const { ROOT } = require('../lib/config.js');
 const { safeJobForClient } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 /** @type {any} */
 let updateJob;
@@ -17,25 +18,22 @@ before(async () => {
 
 describe('Компактный UI прогресса и выпадающий список параллельных загрузок (Issue #4)', () => {
   it('safeJobForClient включает массив activeTransfers с детальной информацией о каждом потоке', () => {
-    const job = {
+    const job = createTestJob({
       id: 'job_parallel_ui',
       method: 'mirror',
       collectionName: 'Test Coll',
       setIds: [100, 200, 300],
-      doneIds: new Set([100]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      mapsById: new Map([
+      doneIds: [100],
+      mapsById: [
         [200, { label: 'Camellia - GHOST' }],
         [300, { label: 'Xi - FREEDOM DiVE' }],
-      ]),
-      activeTransfers: new Map([
+      ],
+      activeTransfers: [
         [200, { setId: 200, setName: 'Camellia - GHOST', mirror: 'osu.direct', bytes: 5000, totalBytes: 10000 }],
         [300, { setId: 300, setName: 'Xi - FREEDOM DiVE', mirror: 'Hinamizawa', bytes: 3000, totalBytes: 12000 }],
-      ]),
+      ],
       status: 'running',
-    };
+    });
 
     const clientJob = safeJobForClient(job);
     assert.ok(Array.isArray(clientJob.activeTransfers));

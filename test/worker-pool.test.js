@@ -18,6 +18,7 @@ const {
 } = require('../lib/mirrors.js');
 const { DOWNLOAD_CONCURRENCY } = require('../lib/config.js');
 const { runJob, safeJobForClient } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 describe('Worker Pool и per-mirror concurrency', () => {
   let s1, s2, s3;
@@ -160,26 +161,18 @@ describe('Worker Pool и per-mirror concurrency', () => {
       { id: 'm3', label: 'Mirror 3', build: (id) => `http://127.0.0.1:${port3}/d/${id}` },
     ]);
 
-    const job = {
+    const job = createTestJob({
       id: 'job_parallel_1',
       method: 'mirror',
       collectionName: 'Test Coll',
       status: 'queued',
       setIds: [77001, 77002, 77003],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      mapsById: new Map([
+      mapsById: [
         [77001, { label: 'Mapset 77001' }],
         [77002, { label: 'Mapset 77002' }],
         [77003, { label: 'Mapset 77003' }],
-      ]),
-      currentBytes: 0,
-      currentTotalBytes: null,
-      currentPercent: 0,
-      currentMirror: null,
-    };
+      ],
+    });
 
     await runJob(job, { kind: 'mirror' });
 
@@ -204,25 +197,21 @@ describe('Worker Pool и per-mirror concurrency', () => {
   });
 
   it('safeJobForClient агрегирует состояние при параллельных загрузках', () => {
-    const job = {
+    const job = createTestJob({
       id: 'job_multi_transfer',
       method: 'mirror',
       collectionName: 'Parallel Coll',
       setIds: [1, 2, 3],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      mapsById: new Map([
+      mapsById: [
         [1, { label: 'Artist 1 - Title 1' }],
         [2, { label: 'Artist 2 - Title 2' }],
-      ]),
-      activeTransfers: new Map([
+      ],
+      activeTransfers: [
         [1, { setId: 1, setName: 'Artist 1 - Title 1', mirror: 'osu.direct', bytes: 1000, totalBytes: 2000 }],
         [2, { setId: 2, setName: 'Artist 2 - Title 2', mirror: 'Hinamizawa', bytes: 3000, totalBytes: 4000 }],
-      ]),
+      ],
       status: 'running',
-    };
+    });
 
     const clientJob = safeJobForClient(job);
     assert.equal(clientJob.currentBytes, 4000);
@@ -234,26 +223,22 @@ describe('Worker Pool и per-mirror concurrency', () => {
   });
 
   it('параллельные воркеры изолируют прогресс и сброс одного воркера не обнуляет прогресс остальных', () => {
-    const job = {
+    const job = createTestJob({
       id: 'job_race_isolation',
       method: 'mirror',
       collectionName: 'Parallel Coll',
       setIds: [101, 102],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      mapsById: new Map([
+      mapsById: [
         [101, { label: 'Map 101' }],
         [102, { label: 'Map 102' }],
-      ]),
-      activeTransfers: new Map([
+      ],
+      activeTransfers: [
         [101, { setId: 101, setName: 'Map 101', mirror: 'm1', bytes: 50000000, totalBytes: 50000000 }],
         [102, { setId: 102, setName: 'Map 102', mirror: 'm2', bytes: 1000000, totalBytes: 10000000 }],
-      ]),
+      ],
       status: 'running',
       message: 'Загрузка beatmap-наборов…',
-    };
+    });
 
     let client = safeJobForClient(job);
     assert.equal(client.currentBytes, 51000000);
@@ -282,22 +267,14 @@ describe('Worker Pool и per-mirror concurrency', () => {
     const releaseM1 = await acquireMirrorSlot(MIRRORS[0]);
     assert.equal(isMirrorBusy(MIRRORS[0]), true);
 
-    const job = {
+    const job = createTestJob({
       id: 'job_fallback_free',
       method: 'mirror',
       collectionName: 'Fallback Coll',
       status: 'queued',
       setIds: [77010],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      mapsById: new Map([[77010, { label: 'Mapset 77010' }]]),
-      currentBytes: 0,
-      currentTotalBytes: null,
-      currentPercent: 0,
-      currentMirror: null,
-    };
+      mapsById: [[77010, { label: 'Mapset 77010' }]],
+    });
 
     // Задача с 1 набором при занятом m1 должна сразу пойти в свободное m2
     await runJob(job, { kind: 'mirror' });

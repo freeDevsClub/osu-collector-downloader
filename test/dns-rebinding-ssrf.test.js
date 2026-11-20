@@ -7,6 +7,7 @@ const http = require('node:http');
 const { isPrivateIp, mirrorRedirectAllowed, createPinnedLookup } = require('../lib/security.js');
 const { safeDownloadFetch, downloadSet } = require('../lib/downloader.js');
 const { buildMirrorUrl } = require('../lib/config.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и загрузчике карт', () => {
   test('mirrorRedirectAllowed отклоняет небезопасный HTTP-протокол', async () => {
@@ -131,13 +132,9 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
         label: 'Mock SSRF Mirror',
         build: () => `http://127.0.0.1:${serverPort}/redirect-to-private`,
       };
-      const mockJob = {
+      const mockJob = createTestJob({
         id: 'job_ssrf_test',
-        doneIds: new Set(),
-        skipIds: new Set(),
-        errIds: new Set(),
-        errorsById: new Map(),
-      };
+      });
 
       await assert.rejects(async () => {
         await downloadSet(99999, { kind: 'mirror', mirror }, mockJob);
@@ -150,13 +147,9 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
         label: 'Mock Empty Redirect Mirror',
         build: () => `http://127.0.0.1:${serverPort}/redirect-empty`,
       };
-      const mockJob = {
+      const mockJob = createTestJob({
         id: 'job_empty_redirect_test',
-        doneIds: new Set(),
-        skipIds: new Set(),
-        errIds: new Set(),
-        errorsById: new Map(),
-      };
+      });
 
       await assert.rejects(async () => {
         await downloadSet(99998, { kind: 'mirror', mirror }, mockJob);

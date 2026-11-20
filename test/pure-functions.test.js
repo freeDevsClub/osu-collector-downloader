@@ -10,6 +10,7 @@ const { extractCollectionId } = require('../lib/collector.js');
 const { parseRetryAfter } = require('../lib/mirrors.js');
 const { verifyZipFile } = require('../lib/downloader.js');
 const { jobCounters } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 const { formatBytes, pluralizeRu, formatPluralRu } = require('../lib/utils/format.js');
 const {
   safeErrorMessage,
@@ -76,13 +77,11 @@ describe('parseRetryAfter', () => {
 
 describe('jobCounters', () => {
   it('корректно рассчитывает прогресс без ошибок', () => {
-    const job = {
+    const job = createTestJob({
       setIds: [1, 2, 3, 4, 5],
-      doneIds: new Set([1, 2]),
-      skipIds: new Set([3]),
-      errIds: new Set(),
-      extraFailures: 0,
-    };
+      doneIds: [1, 2],
+      skipIds: [3],
+    });
     const counters = jobCounters(job);
     assert.deepEqual(counters, {
       downloaded: 2,
@@ -94,13 +93,13 @@ describe('jobCounters', () => {
   });
 
   it('учитывает ошибки и исключает повторы из done/skip', () => {
-    const job = {
+    const job = createTestJob({
       setIds: [1, 2, 3, 4],
-      doneIds: new Set([1]),
-      skipIds: new Set([2]),
-      errIds: new Set([1, 3]), // 1 уже в doneIds, поэтому failed = 1 (только 3)
+      doneIds: [1],
+      skipIds: [2],
+      errIds: [1, 3], // 1 уже в doneIds, поэтому failed = 1 (только 3)
       extraFailures: 1,
-    };
+    });
     const counters = jobCounters(job);
     assert.deepEqual(counters, {
       downloaded: 1,

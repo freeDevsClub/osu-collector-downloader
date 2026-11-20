@@ -393,4 +393,3 @@ module.exports = {
   generateFixtures,
   FIXTURES_DIR,
 };
-

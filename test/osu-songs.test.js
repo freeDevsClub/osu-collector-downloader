@@ -38,6 +38,7 @@ const { jobFilePath, downloadSet, verifyZipFile } = require('../lib/downloader.j
 const { MAX_OSZ_DOWNLOAD_BYTES } = require('../lib/config.js');
 
 const { jobs, launchJob, safeJobForClient } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 /**
  * Создает валидный ZIP-буфер в памяти для тестирования extractZip.
@@ -654,7 +655,7 @@ describe('Интеграция с локальной директорией osu!
       const oszPath = path.join(mockDownloadsDir, `${setId}.osz`);
       await fs.promises.writeFile(oszPath, 'osz content');
 
-      await handlePostDownload(setId, { id: 'job_test' });
+      await handlePostDownload(setId, createTestJob({ id: 'job_test' }));
 
       assert.equal(fs.existsSync(oszPath), false, 'Файл должен быть перемещен из downloads');
       const targetInSongs = path.join(mockSongsDir, `${setId}.osz`);
@@ -682,7 +683,7 @@ describe('Интеграция с локальной директорией osu!
       const oszPath = path.join(mockDownloadsDir, `${setId}.osz`);
       await fs.promises.writeFile(oszPath, 'osz content copy');
 
-      await handlePostDownload(setId, { id: 'job_test' });
+      await handlePostDownload(setId, createTestJob({ id: 'job_test' }));
 
       assert.equal(fs.existsSync(oszPath), true, 'Оригинал должен остаться в downloads');
       const targetInSongs = path.join(mockSongsDir, `${setId}.osz`);
@@ -714,10 +715,10 @@ describe('Интеграция с локальной директорией osu!
       });
       await fs.promises.writeFile(oszPath, mockZip);
 
-      const mockJob = {
+      const mockJob = createTestJob({
         id: 'job_test_extract',
-        mapsById: new Map([[setId, { artist: 'Camellia', title: 'GHOST' }]]),
-      };
+        mapsById: [[setId, { artist: 'Camellia', title: 'GHOST' }]],
+      });
 
       await handlePostDownload(setId, mockJob);
 
@@ -753,10 +754,10 @@ describe('Интеграция с локальной директорией osu!
       });
       await fs.promises.writeFile(oszPath, corruptZip);
 
-      const mockJob = {
+      const mockJob = createTestJob({
         id: 'job_test_corrupt_extract',
-        mapsById: new Map([[setId, { artist: 'Broken', title: 'Song' }]]),
-      };
+        mapsById: [[setId, { artist: 'Broken', title: 'Song' }]],
+      });
 
       await assert.rejects(async () => {
         await handlePostDownload(setId, mockJob);
@@ -826,24 +827,16 @@ describe('Интеграция с локальной директорией osu!
       });
 
       // 10001 уже присутствует в mockSongsDir
-      const job = {
+      const job = createTestJob({
         id: 'job_skip_osu_test',
         method: 'mirror',
         collectionId: 999,
         collectionName: 'Test Collection',
         setIds: [10001],
-        doneIds: new Set(),
-        skipIds: new Set(),
-        errIds: new Set(),
-        errorsById: new Map(),
-        mapsById: new Map([[10001, { label: 'Artist - Title One' }]]),
-        currentBytes: 0,
-        currentTotalBytes: null,
-        currentPercent: 0,
-        currentMirror: null,
+        mapsById: [[10001, { label: 'Artist - Title One' }]],
         status: 'queued',
         message: 'Старт',
-      };
+      });
       jobs.set(job.id, job);
 
       launchJob(job, { kind: 'mirror' });
@@ -875,27 +868,19 @@ describe('Интеграция с локальной директорией osu!
       });
 
       // 10001 и 10002 уже есть в mockSongsDir
-      const job = {
+      const job = createTestJob({
         id: 'job_skip_multi_osu_test',
         method: 'mirror',
         collectionId: 888,
         collectionName: 'Test Multi Skip',
         setIds: [10001, 10002],
-        doneIds: new Set(),
-        skipIds: new Set(),
-        errIds: new Set(),
-        errorsById: new Map(),
-        mapsById: new Map([
+        mapsById: [
           [10001, { label: 'Artist - Title One' }],
           [10002, { label: 'Artist - Title Two' }],
-        ]),
-        currentBytes: 0,
-        currentTotalBytes: null,
-        currentPercent: 0,
-        currentMirror: null,
+        ],
         status: 'queued',
         message: 'Старт',
-      };
+      });
       jobs.set(job.id, job);
 
       launchJob(job, { kind: 'mirror' });

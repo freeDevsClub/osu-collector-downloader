@@ -20,6 +20,7 @@ const {
   setMirrorsForTest,
   resetMirrorsForTest,
 } = require('../lib/mirrors.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 describe('Интеграционные тесты fallback между зеркалами', () => {
   let s1, s2, s3;
@@ -87,19 +88,10 @@ describe('Интеграционные тесты fallback между зерка
       { id: 'm3_200', label: 'Mirror 3 (200)', build: (id) => `http://127.0.0.1:${port3}/d/${id}` },
     ]);
 
-    const job = {
+    const job = createTestJob({
       id: 'test_job_1',
       status: 'running',
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      mapsById: new Map(),
-      currentBytes: 0,
-      currentTotalBytes: null,
-      currentPercent: 0,
-      currentMirror: null,
-    };
+    });
 
     const setId = 99901;
     await downloadFromMirrors(setId, job);
@@ -133,14 +125,10 @@ describe('Интеграционные тесты fallback между зерка
       { id: 'm_404_b', label: 'Mirror 404 B', build: (id) => `http://127.0.0.1:${port404}/d/${id}` },
     ]);
 
-    const job = {
+    const job = createTestJob({
       id: 'test_job_404',
       status: 'running',
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-    };
+    });
 
     try {
       await assert.rejects(async () => {
@@ -157,13 +145,10 @@ describe('Интеграционные тесты fallback между зерка
       { id: 'm_429_b', label: 'Mirror 429 B', build: (id) => `http://127.0.0.1:${port1}/d/${id}` },
     ]);
 
-    const job = {
+    const job = createTestJob({
       id: 'test_job_cooldown',
       status: 'running',
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-    };
+    });
 
     await assert.rejects(
       async () => {
@@ -203,13 +188,10 @@ describe('Интеграционные тесты fallback между зерка
         },
       ]);
 
-      const job = {
+      const job = createTestJob({
         id: 'test_job_dyn_default',
         status: 'running',
-        doneIds: new Set(),
-        skipIds: new Set(),
-        errIds: new Set(),
-      };
+      });
 
       const start = Date.now();
       await assert.rejects(
@@ -247,13 +229,10 @@ describe('Интеграционные тесты fallback между зерка
       ]);
       mirrorCooldowns.set('m_wait_test', Date.now() + 4000);
 
-      const job = {
+      const job = createTestJob({
         id: 'test_job_wait_max',
         status: 'running',
-        doneIds: new Set(),
-        skipIds: new Set(),
-        errIds: new Set(),
-      };
+      });
 
       const start = Date.now();
       await assert.rejects(

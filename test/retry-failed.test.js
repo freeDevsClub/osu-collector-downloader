@@ -18,6 +18,7 @@ const {
   setActiveJob,
   waitForPendingSaveState,
 } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 const { server } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest, mirrorCooldowns } = require('../lib/mirrors.js');
 const { PORT, buildMirrorUrl } = require('../lib/config.js');
@@ -104,19 +105,17 @@ describe('Повтор загрузки наборов с ошибками (Retr
   });
 
   it('getFailedSetIds корректно извлекает только ошибочные ID наборов без повторов и исключений', () => {
-    const job = {
+    const job = createTestJob({
       setIds: [101, 102, 103, 104, 105],
-      doneIds: new Set([101]),
-      skipIds: new Set([102]),
-      errIds: new Set([101, 103, 104]),
-      errorsById: new Map(
-        /** @type {[string | number, any][]} */ ([
-          [103, { id: 103, error: 'Network timeout' }],
-          [105, { id: 105, error: 'HTTP 500' }],
-          ['fatal', { id: 'fatal', error: 'Process crashed' }],
-        ]),
-      ),
-    };
+      doneIds: [101],
+      skipIds: [102],
+      errIds: [101, 103, 104],
+      errorsById: [
+        [103, { id: 103, error: 'Network timeout' }],
+        [105, { id: 105, error: 'HTTP 500' }],
+        ['fatal', { id: 'fatal', error: 'Process crashed' }],
+      ],
+    });
 
     const failedIds = getFailedSetIds(job);
     // 101 уже в doneIds -> исключается
@@ -135,70 +134,63 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
   it('retryFailedJob валидирует состояние и выбрасывает исключения при некорректных данных', () => {
     // 1. Нет ошибок
-    const healthyJob = {
+    const healthyJob = createTestJob({
       id: 'job_healthy',
       status: 'finished',
       setIds: [201],
-      doneIds: new Set([201]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-    };
+      doneIds: [201],
+    });
     assert.throws(() => retryFailedJob(healthyJob, { kind: 'mirror' }), {
       message: /нет ошибок для повторной загрузки/,
     });
 
     // 2. Задача уже выполняется
-    const runningJob = {
+    const runningJob = createTestJob({
       id: 'job_running',
       status: 'running',
       setIds: [202],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set([202]),
-      errorsById: new Map([[202, { id: 202, error: 'fail' }]]),
-    };
+      errIds: [202],
+      errorsById: [[202, { id: 202, error: 'fail' }]],
+    });
     assert.throws(() => retryFailedJob(runningJob, { kind: 'mirror' }), {
       message: /Задача уже выполняется/,
     });
 
     // 3. Другая активная задача уже заняла воркер
-    const activeOtherJob = {
+    const activeOtherJob = createTestJob({
       id: 'job_active_other',
       status: 'running',
       setIds: [203],
-    };
+    });
     setActiveJob(activeOtherJob);
-    const stoppedJob = {
+    const stoppedJob = createTestJob({
       id: 'job_stopped',
       status: 'finished_with_errors',
       setIds: [204],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set([204]),
-      errorsById: new Map([[204, { id: 204, error: 'fail' }]]),
-    };
+      errIds: [204],
+      errorsById: [[204, { id: 204, error: 'fail' }]],
+    });
     assert.throws(() => retryFailedJob(stoppedJob, { kind: 'mirror' }), {
       message: /Уже идёт другая загрузка/,
     });
   });
 
   it('safeJobForClient рассчитывает canRetryFailed на основе статуса и ошибок', () => {
-    const jobWithErrors = {
+    const jobWithErrors = createTestJob({
       id: 'job_client_test',
       status: 'finished_with_errors',
       setIds: [301, 302],
-      doneIds: new Set([301]),
-      skipIds: new Set(),
-      errIds: new Set([302]),
-      errorsById: new Map([[302, { id: 302, name: 'Map 302', error: '404' }]]),
-    };
+      doneIds: [301],
+      errIds: [302],
+      errorsById: [[302, { id: 302, name: 'Map 302', error: '404' }]],
+    });
 
     let clientSafe = safeJobForClient(jobWithErrors);
     assert.equal(clientSafe.canRetryFailed, true);
     assert.equal(clientSafe.failed, 1);
 
     // Во время повторного выполнения canRetryFailed должен быть false
+    jobWithErrors.status = 'queued';
     jobWithErrors.status = 'running';
     clientSafe = safeJobForClient(jobWithErrors);
     assert.equal(clientSafe.canRetryFailed, false);
@@ -214,18 +206,17 @@ describe('Повтор загрузки наборов с ошибками (Retr
   });
 
   it('retryFailedJob скачивает исключительно ошибочные наборы и обновляет статус до finished', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'job_retry_success',
       method: 'mirror',
       noVideo: false,
       setIds: [401, 402, 403],
-      doneIds: new Set([401, 403]),
-      skipIds: new Set(),
-      errIds: new Set([402]),
-      errorsById: new Map([[402, { id: 402, name: 'Map 402', error: 'Timeout' }]]),
+      doneIds: [401, 403],
+      errIds: [402],
+      errorsById: [[402, { id: 402, name: 'Map 402', error: 'Timeout' }]],
       status: 'finished_with_errors',
       message: 'Загрузка завершена с ошибками.',
-    };
+    });
     jobs.set(job.id, job);
 
     retryFailedJob(job, { kind: 'mirror' });
@@ -249,17 +240,16 @@ describe('Повтор загрузки наборов с ошибками (Retr
   });
 
   it('при отмене повторной загрузки незавершённые ошибочные наборы сохраняются в errIds для следующей попытки', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'a000000000000001',
       method: 'mirror',
       noVideo: false,
       setIds: [501, 502],
-      doneIds: new Set([501]),
-      skipIds: new Set(),
-      errIds: new Set([502]),
-      errorsById: new Map([[502, { id: 502, name: 'Map 502', error: 'Initial fail' }]]),
+      doneIds: [501],
+      errIds: [502],
+      errorsById: [[502, { id: 502, name: 'Map 502', error: 'Initial fail' }]],
       status: 'finished_with_errors',
-    };
+    });
     jobs.set(job.id, job);
 
     retryFailedJob(job, { kind: 'mirror' });
@@ -282,21 +272,20 @@ describe('Повтор загрузки наборов с ошибками (Retr
 
   it('при приостановке повторной загрузки (paused) незавершённые карты не помечаются ошибками и сохраняются в retryOnlyIds', async () => {
     // 1. Создаём задачу с двумя ошибками: 701 и 702
-    const job = {
+    const job = createTestJob({
       id: 'a000000000000009',
       method: 'mirror',
       noVideo: false,
       setIds: [700, 701, 702],
-      doneIds: new Set([700]),
-      skipIds: new Set(),
-      errIds: new Set([701, 702]),
-      errorsById: new Map([
+      doneIds: [700],
+      errIds: [701, 702],
+      errorsById: [
         [701, { id: 701, name: 'Map 701', error: 'Initial 500' }],
         [702, { id: 702, name: 'Map 702', error: 'Initial 500' }],
-      ]),
+      ],
       status: 'finished_with_errors',
       message: 'Были ошибки.',
-    };
+    });
     jobs.set(job.id, job);
 
     // Настраиваем мок-сервер: набор 701 скачивается успешно, а набор 702 отдаёт 429
@@ -357,16 +346,13 @@ describe('Повтор загрузки наборов с ошибками (Retr
     assert.equal(res404.status, 404);
 
     // 2. 400 для задачи без ошибок
-    const jobNoErrors = {
+    const jobNoErrors = createTestJob({
       id: 'a000000000000002',
       method: 'mirror',
       status: 'finished',
       setIds: [601],
-      doneIds: new Set([601]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-    };
+      doneIds: [601],
+    });
     jobs.set(jobNoErrors.id, jobNoErrors);
 
     const res400 = await fetch(`http://127.0.0.1:${appPort}/api/downloads/${jobNoErrors.id}/retry-failed`, {
@@ -376,16 +362,14 @@ describe('Повтор загрузки наборов с ошибками (Retr
     assert.equal(res400.status, 400);
 
     // 3. 409 для задачи, которая уже выполняется
-    const jobRunning = {
+    const jobRunning = createTestJob({
       id: 'a000000000000003',
       method: 'mirror',
       status: 'running',
       setIds: [602],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set([602]),
-      errorsById: new Map([[602, { id: 602, error: 'fail' }]]),
-    };
+      errIds: [602],
+      errorsById: [[602, { id: 602, error: 'fail' }]],
+    });
     jobs.set(jobRunning.id, jobRunning);
 
     const res409 = await fetch(`http://127.0.0.1:${appPort}/api/downloads/${jobRunning.id}/retry-failed`, {
@@ -395,18 +379,17 @@ describe('Повтор загрузки наборов с ошибками (Retr
     assert.equal(res409.status, 409);
 
     // 4. 202 для корректного запроса с переключением параметров method и noVideo
-    const jobWithFail = {
+    const jobWithFail = createTestJob({
       id: 'a000000000000004',
       method: 'mirror',
       noVideo: false,
       status: 'finished_with_errors',
       message: 'Были ошибки.',
       setIds: [603, 604],
-      doneIds: new Set([603]),
-      skipIds: new Set(),
-      errIds: new Set([604]),
-      errorsById: new Map([[604, { id: 604, name: 'Failed Map 604', error: '404 Missing' }]]),
-    };
+      doneIds: [603],
+      errIds: [604],
+      errorsById: [[604, { id: 604, name: 'Failed Map 604', error: '404 Missing' }]],
+    });
     jobs.set(jobWithFail.id, jobWithFail);
 
     const res202 = await fetch(
@@ -434,14 +417,10 @@ describe('Повтор загрузки наборов с ошибками (Retr
   });
 
   it('jobCounters и getFailedSetIds устойчивы к fatal ошибке даже если extraFailures не был предварительно сохранён', () => {
-    const jobWithoutExtraField = {
+    const jobWithoutExtraField = createTestJob({
       setIds: [901, 902],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      extraFailures: 0,
-      errorsById: new Map([['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Unexpected exception' }]]),
-    };
+      errorsById: [['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Unexpected exception' }]],
+    });
     const counters = jobCounters(jobWithoutExtraField);
     assert.equal(counters.failed, 1, 'jobCounters должен учесть fatal ошибку из errorsById');
     const failedIds = getFailedSetIds(jobWithoutExtraField);
@@ -456,24 +435,22 @@ describe('Повтор загрузки наборов с ошибками (Retr
       Host: `127.0.0.1:${PORT}`,
       'Content-Type': 'application/json',
     };
-    const jobFatal = {
+    const jobFatal = createTestJob({
       id: 'a000000000000005',
       method: 'mirror',
       noVideo: false,
       status: 'finished_with_errors',
       message: 'Критический сбой задачи: Network disconnected',
       setIds: [801, 802, 803],
-      doneIds: new Set([801]),
-      skipIds: new Set(),
-      errIds: new Set(),
+      doneIds: [801],
       extraFailures: 1,
-      errorsById: new Map([['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Network disconnected' }]]),
-      mapsById: new Map([
+      errorsById: [['fatal', { id: 'fatal', name: 'Системный сбой', error: 'Network disconnected' }]],
+      mapsById: [
         [801, { id: 801, label: 'Map 801' }],
         [802, { id: 802, label: 'Map 802' }],
         [803, { id: 803, label: 'Map 803' }],
-      ]),
-    };
+      ],
+    });
     jobs.set(jobFatal.id, jobFatal);
 
     // 1. Проверяем счётчики и состояние safeJobForClient

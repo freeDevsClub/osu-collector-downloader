@@ -9,6 +9,7 @@ const path = require('node:path');
 const os = require('node:os');
 
 const { jobs, getActiveJob, setActiveJob, safeJobForClient, jobCounters } = require('../lib/jobs.js');
+const { createTestJob, createPausedTestJob, createRunningTestJob } = require('./helpers/job-factory.js');
 
 const { server } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
@@ -82,21 +83,17 @@ describe('Возобновление paused-задачи и обновление
   });
 
   it('POST /api/downloads возобновляет paused-задачу с обновлением method и noVideo', async () => {
-    const job = {
+    const job = createPausedTestJob({
       id: 'a000000000000001',
       collectionId: '12345',
       collectionName: 'Test Collection',
       method: 'session',
       noVideo: false,
       setIds: [9101, 9102],
-      doneIds: new Set([9101]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      status: 'paused',
+      doneIds: [9101],
       autoResumeCount: 2,
       message: 'Пауза.',
-    };
+    });
     jobs.set(job.id, job);
     setActiveJob(job);
 
@@ -133,21 +130,16 @@ describe('Возобновление paused-задачи и обновление
   });
 
   it('POST /api/downloads/:id/resume обновляет method и noVideo через query параметры', async () => {
-    const job = {
+    const job = createPausedTestJob({
       id: 'a000000000000002',
       collectionId: '45678',
       collectionName: 'Test Collection 2',
       method: 'session',
       noVideo: false,
       setIds: [9201],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      status: 'paused',
       autoResumeCount: 1,
       message: 'Пауза.',
-    };
+    });
     jobs.set(job.id, job);
     setActiveJob(job);
 
@@ -175,20 +167,15 @@ describe('Возобновление paused-задачи и обновление
   });
 
   it('POST /api/downloads/:id/resume обновляет method и noVideo через JSON тело запроса', async () => {
-    const job = {
+    const job = createPausedTestJob({
       id: 'a000000000000003',
       collectionId: '78901',
       collectionName: 'Test Collection 3',
       method: 'session',
       noVideo: true,
       setIds: [9301],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      status: 'paused',
       message: 'Пауза.',
-    };
+    });
     jobs.set(job.id, job);
     setActiveJob(job);
 
@@ -215,20 +202,15 @@ describe('Возобновление paused-задачи и обновление
   });
 
   it('POST /api/downloads/:id/resume возвращает 401 при переключении на session без cookie', async () => {
-    const job = {
+    const job = createPausedTestJob({
       id: 'a000000000000004',
       collectionId: '88888',
       collectionName: 'Test Auth',
       method: 'mirror',
       noVideo: false,
       setIds: [9401],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      status: 'paused',
       message: 'Пауза.',
-    };
+    });
     jobs.set(job.id, job);
     setActiveJob(job);
 
@@ -256,11 +238,10 @@ describe('Возобновление paused-задачи и обновление
     assert.equal(res404.status, 404);
 
     // 409
-    const runningJob = {
+    const runningJob = createRunningTestJob({
       id: 'a000000000000005',
-      status: 'running',
       setIds: [9501],
-    };
+    });
     jobs.set(runningJob.id, runningJob);
     setActiveJob(runningJob);
 

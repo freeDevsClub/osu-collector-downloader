@@ -8,6 +8,7 @@ const path = require('node:path');
 const os = require('node:os');
 
 const { jobs, getActiveJob, setActiveJob, jobCounters } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 const { server } = require('../server.js');
 
@@ -64,22 +65,15 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
   }
 
   it('успешно отменяет задачу со статусом finished_with_errors и deferred > 0', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'a1b2c3d4e5f67890123456789abcdef0',
-      method: 'mirror',
-      noVideo: false,
       collectionId: '123',
       collectionName: 'Test Deferred Cancel',
       setIds: [1, 2, 3],
-      doneIds: new Set([1]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map(),
+      doneIds: [1],
       status: 'finished_with_errors',
       message: 'Загрузка завершена с отложенными наборами',
-    };
+    });
     jobs.set(job.id, job);
     setActiveJob(job);
 
@@ -96,22 +90,14 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
   });
 
   it('успешно отменяет задачу в статусе paused', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'b1b2c3d4e5f67890123456789abcdef1',
-      method: 'mirror',
-      noVideo: false,
       collectionId: '124',
       collectionName: 'Test Paused Cancel',
       setIds: [1, 2],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map(),
       status: 'paused',
       message: 'Зеркала остывают',
-    };
+    });
     jobs.set(job.id, job);
     setActiveJob(job);
 
@@ -129,23 +115,15 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
       aborted = true;
     });
 
-    const job = {
+    const job = createTestJob({
       id: 'c1b2c3d4e5f67890123456789abcdef2',
-      method: 'mirror',
-      noVideo: false,
       collectionId: '125',
       collectionName: 'Test Running Cancel',
       setIds: [1, 2],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map(),
       status: 'running',
       message: 'Скачивание...',
       abortController,
-    };
+    });
     jobs.set(job.id, job);
     setActiveJob(job);
 
@@ -164,22 +142,14 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
   });
 
   it('идемпотентно обрабатывает повторную отмену уже отменённой задачи', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'd1b2c3d4e5f67890123456789abcdef3',
-      method: 'mirror',
-      noVideo: false,
       collectionId: '126',
       collectionName: 'Already Cancelled',
       setIds: [1],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map(),
       status: 'cancelled',
       message: 'Загрузка остановлена.',
-    };
+    });
     jobs.set(job.id, job);
 
     const res = await postCancel(job.id);

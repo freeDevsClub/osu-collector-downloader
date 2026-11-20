@@ -26,6 +26,7 @@ const {
 } = require('../lib/osu.js');
 const { runJob } = require('../lib/jobs.js');
 const { HttpError } = require('../lib/config.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 describe('Оценка и проверка свободного места на диске (Disk Space Checks)', () => {
   let tempBaseDir;
@@ -118,10 +119,10 @@ describe('Оценка и проверка свободного места на 
   });
 
   it('estimateRequiredDiskSpace исключает наборы из doneIds и skipIds при возобновлении задачи', async () => {
-    const mockJob = {
-      doneIds: new Set([101]),
-      skipIds: new Set([102]),
-    };
+    const mockJob = createTestJob({
+      doneIds: [101],
+      skipIds: [102],
+    });
 
     const setIds = [101, 102, 103];
     const est = await estimateRequiredDiskSpace(setIds, false, { job: mockJob });
@@ -251,17 +252,15 @@ describe('Оценка и проверка свободного места на 
   });
 
   it('runJob не выполняет повторный estimateRequiredDiskSpace при job._spaceChecked = true', async () => {
-    const mockJob = {
+    const mockJob = createTestJob({
       id: 'job_space_checked_test',
       method: 'mirror',
       setIds: [99901, 99902],
-      doneIds: new Set([99901, 99902]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      _spaceChecked: true,
+      doneIds: [99901, 99902],
       status: 'queued',
       abortController: new AbortController(),
-    };
+      _spaceChecked: true,
+    });
 
     await runJob(mockJob, { kind: 'mirror' });
     // _spaceChecked должен быть очищен после первого прохода

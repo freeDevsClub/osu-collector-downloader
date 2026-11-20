@@ -8,6 +8,7 @@ const path = require('node:path');
 const os = require('node:os');
 
 const { jobs, jobEvents, emitJobUpdate, getActiveJob, setActiveJob, safeJobForClient } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 const { server } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
 const { PORT, buildMirrorUrl } = require('../lib/config.js');
@@ -79,18 +80,13 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   });
 
   it('отдаёт корректные HTTP-заголовки text/event-stream и первоначальный снимок задачи', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'c000000000000001',
-      method: 'mirror',
-      noVideo: false,
       setIds: [1001, 1002],
-      doneIds: new Set([1001]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
+      doneIds: [1001],
       status: 'running',
       message: 'Загрузка beatmap-наборов…',
-    };
+    });
     jobs.set(job.id, job);
 
     const res = await new Promise((resolve) => {
@@ -132,18 +128,12 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   });
 
   it('стримит события в реальном времени при обновлении состояния задачи', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'c000000000000002',
-      method: 'mirror',
-      noVideo: false,
       setIds: [2001, 2002],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
       status: 'queued',
       message: 'В очереди.',
-    };
+    });
     jobs.set(job.id, job);
 
     /** @type {any[]} */
@@ -215,18 +205,12 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   });
 
   it('поддерживает URL /api/downloads/events?id=... как алиас', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'c000000000000003',
-      method: 'mirror',
-      noVideo: false,
       setIds: [3001],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
       status: 'queued',
       message: 'В очереди.',
-    };
+    });
     jobs.set(job.id, job);
 
     const res = await new Promise((resolve) => {
@@ -246,17 +230,11 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   });
 
   it('корректно отписывает слушателей при разрыве клиентского соединения', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'c000000000000004',
-      method: 'mirror',
-      noVideo: false,
       setIds: [4001],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
       status: 'running',
-    };
+    });
     jobs.set(job.id, job);
 
     const initialListeners = jobEvents.listenerCount(`job:${job.id}`);
@@ -364,16 +342,14 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   });
 
   it('safeJobForClient исключает массивы errors и mirrors при options.byteTick: true', () => {
-    const job = {
+    const job = createTestJob({
       id: 'c000000000000005',
-      method: 'mirror',
       setIds: [1001, 1002],
-      doneIds: new Set([1001]),
-      skipIds: new Set(),
-      errIds: new Set([1002]),
-      errorsById: new Map([[1002, { id: 1002, name: 'Beatmap 1002', error: 'Mirror 500 error' }]]),
+      doneIds: [1001],
+      errIds: [1002],
+      errorsById: [[1002, { id: 1002, name: 'Beatmap 1002', error: 'Mirror 500 error' }]],
       status: 'running',
-    };
+    });
 
     const full = safeJobForClient(job);
     assert.ok(Array.isArray(full.errors), 'Полный снимок должен содержать errors');
@@ -389,22 +365,17 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   });
 
   it('SSE-стрим передаёт легковесный снимок без errors и mirrors при промежуточном тике байтов', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'c000000000000006',
-      method: 'mirror',
       setIds: [2001, 2002],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set([2001]),
-      errorsById: new Map([[2001, { id: 2001, name: 'Beatmap 2001', error: 'Fail' }]]),
+      errIds: [2001],
+      errorsById: [[2001, { id: 2001, name: 'Beatmap 2001', error: 'Fail' }]],
       status: 'running',
       currentSetId: 2002,
       currentBytes: 1024,
       currentTotalBytes: 4096,
       currentPercent: 25,
-      _lastEmit: 0,
-      _emitTimer: null,
-    };
+    });
     jobs.set(job.id, job);
 
     /** @type {any[]} */

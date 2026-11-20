@@ -31,6 +31,7 @@ const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
 const { buildMirrorUrl } = require('../lib/config.js');
 
 const { buildBeatmapFolderName } = require('../lib/osu.js');
+const { createTestJob, createPausedTestJob, createRunningTestJob } = require('./helpers/job-factory.js');
 
 describe('Сохранение состояния очереди на диск (Queue State Persistence)', () => {
   let appServer;
@@ -127,29 +128,28 @@ describe('Сохранение состояния очереди на диск (
   });
 
   it('serializeJob и deserializeJob корректно преобразуют структуры данных', () => {
-    const job = {
+    const job = createTestJob({
       id: 'test_job_serialize',
       method: 'mirror',
       noVideo: true,
       collectionId: '54321',
       collectionName: 'Test Collection',
       setIds: [100, 200, 300],
-      doneIds: new Set([100]),
-      skipIds: new Set([200]),
-      errIds: new Set([300]),
-      errorsById: new Map([[300, { id: 300, name: 'Map 300', error: 'HTTP 404' }]]),
-      extraFailures: 0,
-      mapsById: new Map([
+      doneIds: [100],
+      skipIds: [200],
+      errIds: [300],
+      errorsById: [[300, { id: 300, name: 'Map 300', error: 'HTTP 404' }]],
+      mapsById: [
         [100, { id: 100, label: 'Artist 1 - Title 1' }],
         [200, { id: 200, label: 'Artist 2 - Title 2' }],
         [300, { id: 300, label: 'Artist 3 - Title 3' }],
-      ]),
+      ],
       status: 'paused',
       message: 'Пауза из-за зеркал',
       autoResumeCount: 1,
       createdAt: 1700000000000,
       pausedAt: 1700000005000,
-    };
+    });
 
     const serialized = serializeJob(job);
     assert.equal(serialized.id, 'test_job_serialize');
@@ -251,27 +251,23 @@ describe('Сохранение состояния очереди на диск (
   });
 
   it('saveStateToDisk сохраняет файл .state.json, а loadStateFromDisk восстанавливает задачи', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'job_disk_persist_1',
       method: 'mirror',
       noVideo: false,
       collectionId: '8811',
       collectionName: 'Persist Collection',
       setIds: [501, 502, 503],
-      doneIds: new Set([501]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map([
+      doneIds: [501],
+      mapsById: [
         [501, { id: 501, label: 'Map 501' }],
         [502, { id: 502, label: 'Map 502' }],
         [503, { id: 503, label: 'Map 503' }],
-      ]),
+      ],
       status: 'paused',
       message: 'Пауза задачи',
       autoResumeCount: 0,
-    };
+    });
 
     jobs.set(job.id, job);
     setActiveJob(job);
@@ -316,26 +312,22 @@ describe('Сохранение состояния очереди на диск (
 
   it('сценарий перезапуска сервера: восстанавливает незавершённую задачу и позволяет продолжить без перескачивания готовых карт', async () => {
     // 1. Создаём задачу, в которой набор 601 уже скачан, а 602 и 603 ещё нет
-    const job = {
+    const job = createTestJob({
       id: 'job_resume_after_restart',
       method: 'mirror',
       noVideo: false,
       collectionId: '9922',
       collectionName: 'Resume Collection',
       setIds: [601, 602, 603],
-      doneIds: new Set([601]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map([
+      doneIds: [601],
+      mapsById: [
         [601, { id: 601, label: 'Map 601' }],
         [602, { id: 602, label: 'Map 602' }],
         [603, { id: 603, label: 'Map 603' }],
-      ]),
+      ],
       status: 'running', // была в статусе running до внезапной перезагрузки
       message: 'Загрузка…',
-    };
+    });
 
     // Предварительно кладём валидный .osz для 601 на диск
     await fs.writeFile(path.join(tempDir, '601.osz'), validZipBuffer);
@@ -387,25 +379,24 @@ describe('Сохранение состояния очереди на диск (
   });
 
   it('сценарий повтора ошибок после перезапуска сервера: canRetryFailed остаётся true и retryFailedJob докачивает только упавшие наборы', async () => {
-    const job = {
+    const job = createTestJob({
       id: 'job_retry_after_restart',
       method: 'mirror',
       noVideo: false,
       collectionId: '9933',
       collectionName: 'Failed Collection',
       setIds: [701, 702],
-      doneIds: new Set([701]),
-      skipIds: new Set(),
-      errIds: new Set([702]),
-      errorsById: new Map([[702, { id: 702, name: 'Map 702', error: 'HTTP 502' }]]),
+      doneIds: [701],
+      errIds: [702],
+      errorsById: [[702, { id: 702, name: 'Map 702', error: 'HTTP 502' }]],
       extraFailures: 0,
-      mapsById: new Map([
+      mapsById: [
         [701, { id: 701, label: 'Map 701' }],
         [702, { id: 702, label: 'Map 702' }],
-      ]),
+      ],
       status: 'finished_with_errors',
       message: 'Готово с ошибками: 1 из 2.',
-    };
+    });
 
     jobs.set(job.id, job);
     await saveStateToDisk();
@@ -477,22 +468,16 @@ describe('Сохранение состояния очереди на диск (
     assert.ok(/Нет активной загрузки/i.test(resEmpty.data.error));
 
     // 2. Создаём задачу на паузе
-    const job = {
+    const job = createPausedTestJob({
       id: 'active_check_job_1',
       method: 'mirror',
       noVideo: true,
       collectionId: '777',
       collectionName: 'Active Check',
       setIds: [801, 802],
-      doneIds: new Set([801]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map(),
-      status: 'paused',
+      doneIds: [801],
       message: 'Задача на паузе.',
-    };
+    });
     jobs.set(job.id, job);
     setActiveJob(job);
 
@@ -514,25 +499,20 @@ describe('Сохранение состояния очереди на диск (
   it('устранение гонки: фоновый bootstrapServer блокирует ранний GET /api/downloads/active от ложного 404', async () => {
     await waitForPendingSaveState();
     // 1. Создаём сохранённую задачу на диске
-    const jobOnDisk = {
+    const jobOnDisk = createPausedTestJob({
       id: 'job_bootstrap_race_test',
       method: 'mirror',
       noVideo: false,
       collectionId: '555',
       collectionName: 'Bootstrap Race',
       setIds: [951, 952],
-      doneIds: new Set([951]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map([
+      doneIds: [951],
+      mapsById: [
         [951, { id: 951, label: 'Map 951' }],
         [952, { id: 952, label: 'Map 952' }],
-      ]),
-      status: 'paused',
+      ],
       message: 'Задача на паузе до рестарта.',
-    };
+    });
     jobs.set(jobOnDisk.id, jobOnDisk);
     setActiveJob(jobOnDisk);
     await saveStateToDisk();
@@ -588,14 +568,14 @@ describe('Сохранение состояния очереди на диск (
       creator: 'Nakagawa-Kanon',
     };
 
-    const job = {
+    const job = createTestJob({
       id: 'job_metadata_persistence_test',
       method: 'mirror',
       collectionId: '888',
       setIds: [54321],
-      mapsById: new Map([[54321, originalMapInfo]]),
+      mapsById: [[54321, originalMapInfo]],
       createdAt: 1700000000000,
-    };
+    });
 
     // Имя папки до перезапуска
     const folderBeforeRestart = buildBeatmapFolderName(54321, job.mapsById.get(54321));
@@ -642,13 +622,13 @@ describe('Сохранение состояния очереди на диск (
 
   it('поле createdAt стабильно, не мутирует при повторной сериализации и возвращается в safeJobForClient', async () => {
     const initialTime = 1710000000000;
-    const job = {
+    const job = createTestJob({
       id: 'job_created_at_test',
       method: 'mirror',
       setIds: [1],
       createdAt: initialTime,
-      mapsById: new Map([[1, { id: 1, label: 'Test' }]]),
-    };
+      mapsById: [[1, { id: 1, label: 'Test' }]],
+    });
 
     // 1. Первая сериализация
     const s1 = serializeJob(job);
@@ -679,23 +659,18 @@ describe('Сохранение состояния очереди на диск (
   });
 
   it('saveStateToDisk сохраняет компактный JSON без отступов и лишних переводов строк', async () => {
-    const job = {
+    const job = createRunningTestJob({
       id: 'job_compact_json_test',
       method: 'mirror',
       setIds: [1001, 1002],
-      doneIds: new Set([1001]),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
-      mapsById: new Map([
+      doneIds: [1001],
+      mapsById: [
         [1001, { id: 1001, label: 'Artist 1 — Title 1', title: 'Title 1', artist: 'Artist 1', creator: 'Creator 1' }],
         [1002, { id: 1002, label: 'Artist 2 — Title 2', title: 'Title 2', artist: 'Artist 2', creator: 'Creator 2' }],
-      ]),
-      status: 'running',
+      ],
       message: 'Загрузка...',
       createdAt: Date.now(),
-    };
+    });
 
     jobs.set(job.id, job);
     setActiveJob(job);
@@ -727,19 +702,14 @@ describe('Сохранение состояния очереди на диск (
       });
     }
 
-    const job = {
+    const job = createRunningTestJob({
       id: 'job_cache_reuse_test',
       method: 'mirror',
       setIds: Array.from(mapsById.keys()),
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
       mapsById,
-      status: 'running',
       message: 'Загрузка...',
       createdAt: 1710000000000,
-    };
+    });
 
     const first = serializeJob(job);
     assert.ok(Array.isArray(first.maps));
@@ -758,19 +728,14 @@ describe('Сохранение состояния очереди на диск (
   it('serializeJob корректно инвалидирует и обновляет кеш метаданных при фоновом обогащении карт', () => {
     const mapsById = new Map([[10, { id: 10, label: 'Набор 10', title: null, artist: null, creator: null }]]);
 
-    const job = {
+    const job = createRunningTestJob({
       id: 'job_cache_invalidation_test',
       method: 'mirror',
       setIds: [10],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
       mapsById,
-      status: 'running',
       message: 'Ожидание метаданных...',
       createdAt: 1710000000000,
-    };
+    });
 
     const first = serializeJob(job);
     assert.equal(first.maps[0].title, null);

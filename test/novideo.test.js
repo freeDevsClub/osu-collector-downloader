@@ -10,6 +10,7 @@ const os = require('node:os');
 const { buildMirrorUrl, DEFAULT_MIRRORS } = require('../lib/config.js');
 const { downloadSet, appendNoVideo, estimateRequiredDiskSpace } = require('../lib/downloader.js');
 const { safeJobForClient } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 describe('Режим скачивания «Без видео» (No Video)', () => {
   let server;
@@ -91,28 +92,20 @@ describe('Режим скачивания «Без видео» (No Video)', () 
       build: (id, opts) => buildMirrorUrl(`http://127.0.0.1:${serverPort}/d/{id}`, id, opts),
     };
 
-    const jobNoVideo = {
+    const jobNoVideo = createTestJob({
       id: 'job_nv_true',
       noVideo: true,
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-    };
+    });
 
     await downloadSet(88001, { kind: 'mirror', mirror: testMirror }, jobNoVideo);
     assert.equal(requestedUrls.length, 1);
     assert.ok(requestedUrls[0].includes('noVideo=1'), `Ожидался noVideo=1 в URL, получено: ${requestedUrls[0]}`);
 
     requestedUrls = [];
-    const jobWithVideo = {
+    const jobWithVideo = createTestJob({
       id: 'job_nv_false',
       noVideo: false,
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-    };
+    });
 
     await downloadSet(88002, { kind: 'mirror', mirror: testMirror }, jobWithVideo);
     assert.equal(requestedUrls.length, 1);
@@ -124,31 +117,23 @@ describe('Режим скачивания «Без видео» (No Video)', () 
   });
 
   it('safeJobForClient корректно возвращает noVideo клиенту', () => {
-    const job1 = {
+    const job1 = createTestJob({
       id: 'test_job_novideo_client',
       method: 'mirror',
       noVideo: true,
       collectionName: 'No Video Collection',
       setIds: [1],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      mapsById: new Map(),
-    };
+    });
     const client1 = safeJobForClient(job1);
     assert.equal(client1.noVideo, true);
 
-    const job2 = {
+    const job2 = createTestJob({
       id: 'test_job_video_client',
       method: 'mirror',
       noVideo: false,
       collectionName: 'Video Collection',
       setIds: [1],
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      mapsById: new Map(),
-    };
+    });
     const client2 = safeJobForClient(job2);
     assert.equal(client2.noVideo, false);
   });

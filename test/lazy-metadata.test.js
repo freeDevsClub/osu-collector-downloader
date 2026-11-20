@@ -14,6 +14,7 @@ const {
 } = require('../lib/collector.js');
 const { PORT, PAGINATION_PAGE_LIMIT, MAPSET_FETCH_BUDGET_MS } = require('../lib/config.js');
 const { safeJobForClient } = require('../lib/jobs.js');
+const { createTestJob } = require('./helpers/job-factory.js');
 
 describe('Мгновенный старт и ленивая подгрузка названий (Instant Start & Lazy Metadata)', () => {
   const originalFetch = globalThis.fetch;
@@ -156,34 +157,16 @@ describe('Мгновенный старт и ленивая подгрузка �
 
     const snapshot = await fetchCollection('99002');
     // Создаём задачу скачивания сразу, пока метаданные ещё не подгрузились
-    const mockJob = {
+    const mockJob = createTestJob({
       id: 'job_test_enrichment',
       method: 'mirror',
-      noVideo: false,
       collectionId: '99002',
       collectionName: snapshot.name,
       setIds: snapshot.setIds,
-      doneIds: new Set(),
-      skipIds: new Set(),
-      errIds: new Set(),
-      errorsById: new Map(),
-      extraFailures: 0,
       mapsById: snapshot.mapsById,
-      currentBytes: 0,
-      currentTotalBytes: null,
-      currentPercent: 0,
-      currentMirror: null,
-      autoResumeAt: null,
-      autoResumeCount: 0,
-      autoResumeTimer: null,
-      abortController: null,
       currentSetId: 201,
       status: 'running',
-      createdAt: Date.now(),
-      startedAt: Date.now(),
-      finishedAt: null,
-      error: null,
-    };
+    });
 
     // До ответа beatmapsV2 safeJobForClient использует fallback-название
     let clientJob = safeJobForClient(mockJob);
