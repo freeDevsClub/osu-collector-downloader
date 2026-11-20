@@ -99,7 +99,8 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
 
-    if (['/', '/index.html', '/app.js', '/style.css'].includes(url.pathname)) {
+    const isStaticAsset = ['/', '/index.html', '/app.js', '/style.css'].includes(url.pathname) || url.pathname.startsWith('/public/');
+    if (isStaticAsset) {
       if (!['GET', 'HEAD'].includes(req.method)) {
         res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' });
         return res.end('Method not allowed');
@@ -120,17 +121,38 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      const asset = url.pathname === '/app.js'
-        ? 'app.js'
-        : url.pathname === '/style.css'
-          ? 'style.css'
-          : 'index.html';
-      const content = await fs.promises.readFile(path.join(ROOT, asset));
-      const contentType = asset.endsWith('.js')
+      const rawAsset = (url.pathname === '/' || url.pathname === '/index.html')
+        ? 'index.html'
+        : url.pathname === '/app.js'
+          ? 'app.js'
+          : url.pathname === '/style.css'
+            ? 'style.css'
+            : url.pathname.replace(/^\/+/, '');
+      const filePath = path.resolve(ROOT, rawAsset);
+      const rel = path.relative(ROOT, filePath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('Forbidden');
+      }
+
+      let content;
+      try {
+        content = await fs.promises.readFile(filePath);
+      } catch (err) {
+        if (err && (err.code === 'ENOENT' || err.code === 'EISDIR')) {
+          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+          return res.end('Not found');
+        }
+        throw err;
+      }
+
+      const contentType = rawAsset.endsWith('.js')
         ? 'text/javascript; charset=utf-8'
-        : asset.endsWith('.css')
+        : rawAsset.endsWith('.css')
           ? 'text/css; charset=utf-8'
-          : 'text/html; charset=utf-8';
+          : rawAsset.endsWith('.json')
+            ? 'application/json; charset=utf-8'
+            : 'text/html; charset=utf-8';
 
       const cookies = parseCookies(req.headers.cookie);
       const hasValidTokenCookie = safeCompareTokens(cookies[localApiTokenCookie], getApiToken());

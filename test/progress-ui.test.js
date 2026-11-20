@@ -1,13 +1,19 @@
 "use strict";
 
-const { describe, it } = require('node:test');
+const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const { ROOT } = require('../lib/config.js');
 const { safeJobForClient } = require('../lib/jobs.js');
-const { updateJob } = require('../app.js');
+
+/** @type {any} */
+let updateJob;
+
+before(async () => {
+  ({ updateJob } = await import('../public/js/components/downloads.js'));
+});
 
 describe('Компактный UI прогресса и выпадающий список параллельных загрузок (Issue #4)', () => {
   it('safeJobForClient включает массив activeTransfers с детальной информацией о каждом потоке', () => {

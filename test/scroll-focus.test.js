@@ -1,12 +1,18 @@
 "use strict";
 
-const { describe, it } = require('node:test');
+const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const { ROOT } = require('../lib/config.js');
-const { finishJob } = require('../app.js');
+
+/** @type {any} */
+let finishJob;
+
+before(async () => {
+  ({ finishJob } = await import('../public/js/components/downloads.js'));
+});
 
 describe('Устранение бага со скроллом и потерей фокуса при отмене/завершении задачи (Issue #1)', () => {
   it('finishJob не вызывает blur на document.body или document.documentElement, предотвращая блокировку скролла колесиком', () => {

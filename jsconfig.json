@@ -13,6 +13,7 @@
   "include": [
     "server.js",
     "app.js",
+    "public/**/*.js",
     "lib/**/*.js",
     "test/**/*.js"
   ],

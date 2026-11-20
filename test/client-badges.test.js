@@ -1,8 +1,15 @@
 "use strict";
 
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it, beforeEach, before } = require('node:test');
 const assert = require('node:assert/strict');
-const { updateMapBadge, setCollection, getCollection, updateJob } = require('../app.js');
+
+/** @type {any} */
+let updateMapBadge, setCollection, getCollection, updateJob;
+
+before(async () => {
+  ({ updateMapBadge, setCollection, getCollection } = await import('../public/js/components/collection.js'));
+  ({ updateJob } = await import('../public/js/components/downloads.js'));
+});
 
 describe('Оптимизация updateMapBadge: переход с O(N²) на O(N) через Set', () => {
   beforeEach(() => {
