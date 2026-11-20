@@ -93,7 +93,10 @@ project-ai/
 │   ├── mirrors.js          # Реестр зеркал, управление кулдаунами (Retry-After) и классификация ошибок
 │   ├── downloader.js       # Стриминг файлов, верификация ZIP/EOCD, атомарная запись и проверка диска
 │   ├── jobs.js             # Жизненный цикл задач загрузки, расчет прогресса, повтор ошибок и автовозобновление
-│   └── osu.js              # Интеграция с osu! Songs, Zero-Dependency ZIP-распаковщик, индексация карт
+│   ├── job.js              # Модель Job, фабрика createJob и машина состояний JobStateMachine
+│   ├── osu.js              # Интеграция с osu! Songs, Zero-Dependency ZIP-распаковщик, индексация карт
+│   ├── router.js           # Маршрутизатор Router (быстрый O(1) поиск и сопоставление по шаблонам)
+│   └── routes/             # Модульные контроллеры API (osu, session, collections, downloads)
 ├── test/
 │   ├── pure-functions.test.js    # Тесты чистых функций (парсинг URL, Retry-After, IP-фильтры, ZIP)
 │   ├── mirrors-fallback.test.js  # Сквозные тесты с локальными mock-серверами (fallback 429 -> 500 -> 200)
@@ -103,6 +106,8 @@ project-ai/
 │   ├── sse-streaming.test.js     # Тесты SSE-стриминга событий прогресса
 │   ├── state-persistence.test.js # Тесты сохранения и восстановления очереди на диск
 │   ├── data-dir-separation.test.js # Тесты разделения каталога загрузок и каталога данных/конфигурации
+│   ├── job-state-machine.test.js # Тесты модели Job и валидации переходов машины состояний
+│   ├── router.test.js            # Тесты декомпозированного роутера и сопоставления маршрутов
 │   └── osu-songs.test.js         # Тесты интеграции с osu! Songs, распаковки ZIP и перемещения
 ├── data/                   # Каталог данных и настроек приложения (.state.json, .settings.json, DATA_DIR/CONFIG_DIR)
 └── downloads/              # Каталог для готовых .osz файлов и временных .part (DOWNLOADS_DIR)
