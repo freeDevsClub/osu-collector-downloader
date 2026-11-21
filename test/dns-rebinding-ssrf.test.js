@@ -8,6 +8,7 @@ const { isPrivateIp, mirrorRedirectAllowed, createPinnedLookup } = require('../l
 const { safeDownloadFetch, downloadSet } = require('../lib/downloader.js');
 const { buildMirrorUrl } = require('../lib/config.js');
 const { createTestJob } = require('./helpers/job-factory.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и загрузчике карт', () => {
   test('mirrorRedirectAllowed отклоняет небезопасный HTTP-протокол', async () => {
@@ -93,8 +94,10 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
     let server;
     /** @type {number} */
     let serverPort;
+    let testEnv;
 
     before(async () => {
+      testEnv = await setupIsolatedTestEnv('dns-ssrf-test-');
       server = http.createServer((req, res) => {
         if (req.url === '/redirect-to-private') {
           // Имитируем попытку зеркала перенаправить на приватный адрес
@@ -124,6 +127,9 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
 
     after(async () => {
       await new Promise((resolve) => server.close(resolve));
+      if (testEnv) {
+        await testEnv.cleanup();
+      }
     });
 
     test('downloadSet блокирует небезопасный редирект зеркала на приватный хост', async () => {

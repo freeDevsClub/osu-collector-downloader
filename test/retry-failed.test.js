@@ -22,13 +22,14 @@ const { createTestJob } = require('./helpers/job-factory.js');
 const { server } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest, mirrorCooldowns } = require('../lib/mirrors.js');
 const { PORT, buildMirrorUrl } = require('../lib/config.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Повтор загрузки наборов с ошибками (Retry Failed Only)', () => {
   let appServer;
   let appPort;
   let mockMirrorServer;
   let mockMirrorPort;
-  let tempDir;
+  let testEnv;
   let originalMirrors;
   const requestedBeatmapSets = [];
   const mockStatusBySetId = new Map();
@@ -41,8 +42,7 @@ describe('Повтор загрузки наборов с ошибками (Retr
   ]);
 
   before(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'retry-failed-test-'));
-    process.env.DOWNLOADS_DIR = tempDir;
+    testEnv = await setupIsolatedTestEnv('retry-failed-test-');
 
     // Мок-сервер зеркала
     mockMirrorServer = http.createServer((req, res) => {
@@ -91,8 +91,8 @@ describe('Повтор загрузки наборов с ошибками (Retr
     if (mockMirrorServer) {
       await new Promise((resolve) => mockMirrorServer.close(resolve));
     }
-    if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    if (testEnv) {
+      await testEnv.cleanup();
     }
   });
 

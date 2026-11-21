@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 
 const { server } = require('../server.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Декомпозиция клиентского монолита на ES-модули (Issue #9)', () => {
   /** @type {any} */
@@ -25,8 +26,10 @@ describe('Декомпозиция клиентского монолита на 
   let port;
   /** @type {string} */
   let baseUrl;
+  let testEnv;
 
   before(async () => {
+    testEnv = await setupIsolatedTestEnv('client-modules-test-');
     utilsMod = await import('../public/js/utils.js');
     apiMod = await import('../public/js/api.js');
     mirrorsMod = await import('../public/js/components/mirrors.js');
@@ -46,6 +49,9 @@ describe('Декомпозиция клиентского монолита на 
 
   after(async () => {
     await new Promise((resolve) => server.close(resolve));
+    if (testEnv) {
+      await testEnv.cleanup();
+    }
   });
 
   it('public/js/utils.js экспортирует чистые функции форматирования и DOM-утилиты', () => {

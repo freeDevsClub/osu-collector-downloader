@@ -9,12 +9,15 @@ const { Readable } = require('node:stream');
 const { server } = require('../server.js');
 const { readJson, closeStreamOrSocket } = require('../lib/utils/http.js');
 const { PORT, MAX_BODY, HttpError } = require('../lib/config.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Лимит размера тела запроса (HTTP 413) и закрытие сокетов в readJson', () => {
   let appServer;
   let appPort;
+  let testEnv;
 
   before(async () => {
+    testEnv = await setupIsolatedTestEnv('body-limit-test-');
     appServer = server.listen(0, '127.0.0.1');
     await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
@@ -23,6 +26,9 @@ describe('Лимит размера тела запроса (HTTP 413) и зак
   after(async () => {
     if (appServer) {
       await new Promise((resolve) => appServer.close(resolve));
+    }
+    if (testEnv) {
+      await testEnv.cleanup();
     }
   });
 

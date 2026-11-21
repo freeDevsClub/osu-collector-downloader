@@ -11,11 +11,12 @@ const { jobs, getActiveJob, setActiveJob } = require('../lib/jobs.js');
 const { collectionCache } = require('../lib/collector.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
 const { server } = require('../server.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Мгновенный ответ POST /api/downloads со статусом preparing и фоновая подготовка', () => {
   let appServer;
   let appPort;
-  let tempDir;
+  let testEnv;
   let originalFetch;
   let mirrorServer;
   let mirrorPort;
@@ -30,8 +31,7 @@ describe('Мгновенный ответ POST /api/downloads со статус�
   ]);
 
   before(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fast-dl-test-'));
-    process.env.DOWNLOADS_DIR = tempDir;
+    testEnv = await setupIsolatedTestEnv('fast-dl-test-');
 
     // Мок зеркала
     mirrorServer = http.createServer((req, res) => {
@@ -71,9 +71,9 @@ describe('Мгновенный ответ POST /api/downloads со статус�
     if (mirrorServer) {
       await new Promise((resolve) => mirrorServer.close(resolve));
     }
-    try {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    } catch {}
+    if (testEnv) {
+      await testEnv.cleanup();
+    }
   });
 
   beforeEach(() => {

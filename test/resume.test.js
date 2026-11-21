@@ -14,13 +14,14 @@ const { createTestJob, createPausedTestJob, createRunningTestJob } = require('./
 const { server } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
 const { PORT, buildMirrorUrl } = require('../lib/config.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Возобновление paused-задачи и обновление настроек (Resume Settings)', () => {
   let appServer;
   let appPort;
   let mockMirrorServer;
   let mockMirrorPort;
-  let tempDir;
+  let testEnv;
   let originalMirrors;
   const requestedBeatmapSets = [];
 
@@ -32,8 +33,7 @@ describe('Возобновление paused-задачи и обновление
   ]);
 
   before(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'resume-test-'));
-    process.env.DOWNLOADS_DIR = tempDir;
+    testEnv = await setupIsolatedTestEnv('resume-test-');
 
     // Мок-сервер зеркал
     mockMirrorServer = http.createServer((req, res) => {
@@ -71,9 +71,9 @@ describe('Возобновление paused-задачи и обновление
     if (mockMirrorServer) {
       await new Promise((resolve) => mockMirrorServer.close(resolve));
     }
-    try {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    } catch {}
+    if (testEnv) {
+      await testEnv.cleanup();
+    }
   });
 
   beforeEach(() => {

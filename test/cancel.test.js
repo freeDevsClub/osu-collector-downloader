@@ -9,17 +9,17 @@ const os = require('node:os');
 
 const { jobs, getActiveJob, setActiveJob, jobCounters } = require('../lib/jobs.js');
 const { createTestJob } = require('./helpers/job-factory.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 const { server } = require('../server.js');
 
 describe('Отмена задач и обработчик POST /api/downloads/:id/cancel', () => {
   let appServer;
   let appPort;
-  let tempDir;
+  let testEnv;
 
   before(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cancel-test-'));
-    process.env.DOWNLOADS_DIR = tempDir;
+    testEnv = await setupIsolatedTestEnv('cancel-test-');
 
     appServer = server.listen(0, '127.0.0.1');
     await new Promise((resolve) => appServer.once('listening', resolve));
@@ -30,9 +30,9 @@ describe('Отмена задач и обработчик POST /api/downloads/:i
     if (appServer) {
       await new Promise((resolve) => appServer.close(resolve));
     }
-    try {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    } catch {}
+    if (testEnv) {
+      await testEnv.cleanup();
+    }
   });
 
   beforeEach(() => {

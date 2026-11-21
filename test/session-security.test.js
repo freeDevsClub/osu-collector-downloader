@@ -9,12 +9,15 @@ const path = require('node:path');
 const { server } = require('../server.js');
 const { sessions, getActiveRedactionsCount } = require('../lib/security.js');
 const { PORT, ROOT } = require('../lib/config.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Безопасность сессий и cookie osu_session (/api/session)', () => {
   let appServer;
   let appPort;
+  let testEnv;
 
   before(async () => {
+    testEnv = await setupIsolatedTestEnv('session-sec-test-');
     appServer = server.listen(0, '127.0.0.1');
     await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
@@ -23,6 +26,9 @@ describe('Безопасность сессий и cookie osu_session (/api/sess
   after(async () => {
     if (appServer) {
       await new Promise((resolve) => appServer.close(resolve));
+    }
+    if (testEnv) {
+      await testEnv.cleanup();
     }
   });
 

@@ -14,12 +14,15 @@ const {
   safeErrorMessage,
 } = require('../lib/security.js');
 const { PORT } = require('../lib/config.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Утечка секретов в activeRedactions и ротация токенов', () => {
   let serverInstance;
   let serverPort;
+  let testEnv;
 
   before(async () => {
+    testEnv = await setupIsolatedTestEnv('redactions-test-');
     serverInstance = server.listen(0, '127.0.0.1');
     await new Promise((resolve) => serverInstance.once('listening', resolve));
     serverPort = /** @type {import('node:net').AddressInfo} */ (serverInstance.address()).port;
@@ -29,6 +32,9 @@ describe('Утечка секретов в activeRedactions и ротация т
     await new Promise((resolve) => serverInstance.close(resolve));
     clearRedactions();
     sessions.clear();
+    if (testEnv) {
+      await testEnv.cleanup();
+    }
   });
 
   beforeEach(() => {

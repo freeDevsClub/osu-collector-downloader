@@ -21,12 +21,13 @@ const {
   resetMirrorsForTest,
 } = require('../lib/mirrors.js');
 const { createTestJob } = require('./helpers/job-factory.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Интеграционные тесты fallback между зеркалами', () => {
   let s1, s2, s3;
   let port1, port2, port3;
   let originalMirrors;
-  let tempDir;
+  let testEnv;
 
   const validZipBuffer = Buffer.from([
     // Local file header (30 bytes)
@@ -36,8 +37,7 @@ describe('Интеграционные тесты fallback между зерка
   ]);
 
   before(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mirrors-test-'));
-    process.env.DOWNLOADS_DIR = tempDir;
+    testEnv = await setupIsolatedTestEnv('mirrors-test-');
 
     // Зеркало 1: всегда 429 с Retry-After: 60
     s1 = http.createServer((req, res) => {
@@ -76,8 +76,8 @@ describe('Интеграционные тесты fallback между зерка
       new Promise((r) => s2.close(r)),
       new Promise((r) => s3.close(r)),
     ]);
-    if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    if (testEnv) {
+      await testEnv.cleanup();
     }
   });
 
@@ -105,7 +105,7 @@ describe('Интеграционные тесты fallback между зерка
     assert.equal(job.errIds.has(setId), false);
 
     // 3. Файл сохранён на диске
-    const filePath = path.join(tempDir, `${setId}.osz`);
+    const filePath = path.join(testEnv.tempDownloadsDir, `${setId}.osz`);
     const stat = await fs.stat(filePath);
     assert.equal(stat.size, validZipBuffer.length);
   });

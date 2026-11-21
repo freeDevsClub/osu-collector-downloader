@@ -7,12 +7,15 @@ const http = require('node:http');
 const { server } = require('../server.js');
 const { jobs, setActiveJob, getActiveJob } = require('../lib/jobs.js');
 const { PORT } = require('../lib/config.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn suppression)', () => {
   let appServer;
   let appPort;
+  let testEnv;
 
   before(async () => {
+    testEnv = await setupIsolatedTestEnv('http-methods-test-');
     appServer = server.listen(0, '127.0.0.1');
     await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {import('node:net').AddressInfo} */ (appServer.address()).port;
@@ -21,6 +24,9 @@ describe('HTTP-методы и статусы (405 Method Not Allowed & 404 warn
   after(async () => {
     if (appServer) {
       await new Promise((resolve) => appServer.close(resolve));
+    }
+    if (testEnv) {
+      await testEnv.cleanup();
     }
   });
 

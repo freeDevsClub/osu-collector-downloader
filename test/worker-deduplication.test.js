@@ -1,10 +1,11 @@
 'use strict';
 
-const { describe, it } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 const {
   createJob,
@@ -18,6 +19,17 @@ const {
 const downloader = require('../lib/downloader.js');
 
 describe('Устранение дублирования воркеров скачивания (Worker Deduplication & Helpers)', () => {
+  let testEnv;
+
+  before(async () => {
+    testEnv = await setupIsolatedTestEnv('worker-dedup-suite-');
+  });
+
+  after(async () => {
+    if (testEnv) {
+      await testEnv.cleanup();
+    }
+  });
   describe('createQueueIterator', () => {
     it('последовательно отдаёт элементы очереди и завершается null', () => {
       const getNext = createQueueIterator([101, 102, 103]);

@@ -9,6 +9,7 @@ const os = require('node:os');
 
 const { jobs, jobEvents, emitJobUpdate, getActiveJob, setActiveJob, safeJobForClient } = require('../lib/jobs.js');
 const { createTestJob } = require('./helpers/job-factory.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 const { server } = require('../server.js');
 const { setMirrorsForTest, resetMirrorsForTest } = require('../lib/mirrors.js');
 const { PORT, buildMirrorUrl } = require('../lib/config.js');
@@ -18,7 +19,7 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   let appPort;
   let mockMirrorServer;
   let mockMirrorPort;
-  let tempDir;
+  let testEnv;
   let originalMirrors;
 
   const validZipBuffer = Buffer.from([
@@ -29,8 +30,7 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
   ]);
 
   before(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sse-test-'));
-    process.env.DOWNLOADS_DIR = tempDir;
+    testEnv = await setupIsolatedTestEnv('sse-test-');
 
     mockMirrorServer = http.createServer((req, res) => {
       res.writeHead(200, {
@@ -69,8 +69,8 @@ describe('Стриминг событий через Server-Sent Events (SSE)', 
       }
       await new Promise((resolve) => mockMirrorServer.close(resolve));
     }
-    if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    if (testEnv) {
+      await testEnv.cleanup();
     }
   });
 

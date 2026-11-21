@@ -11,12 +11,13 @@ const { buildMirrorUrl, DEFAULT_MIRRORS } = require('../lib/config.js');
 const { downloadSet, appendNoVideo, estimateRequiredDiskSpace } = require('../lib/downloader.js');
 const { safeJobForClient } = require('../lib/jobs.js');
 const { createTestJob } = require('./helpers/job-factory.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Режим скачивания «Без видео» (No Video)', () => {
   let server;
   let serverPort;
   let requestedUrls = [];
-  let tempDir;
+  let testEnv;
 
   const validZipBuffer = Buffer.from([
     // Local file header (30 bytes)
@@ -26,8 +27,7 @@ describe('Режим скачивания «Без видео» (No Video)', () 
   ]);
 
   before(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'novideo-test-'));
-    process.env.DOWNLOADS_DIR = tempDir;
+    testEnv = await setupIsolatedTestEnv('novideo-test-');
 
     server = http.createServer((req, res) => {
       requestedUrls.push(req.url);
@@ -43,8 +43,8 @@ describe('Режим скачивания «Без видео» (No Video)', () 
 
   after(async () => {
     await new Promise((r) => server.close(r));
-    if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    if (testEnv) {
+      await testEnv.cleanup();
     }
   });
 

@@ -22,12 +22,15 @@ const {
 } = require('../lib/security.js');
 
 const { PORT } = require('../lib/config.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Аутентификация локального API через сессионный токен (защита от локальных процессов)', () => {
   let appServer;
   let appPort;
+  let testEnv;
 
   before(async () => {
+    testEnv = await setupIsolatedTestEnv('api-token-test-');
     appServer = server.listen(0, '127.0.0.1');
     await new Promise((resolve) => appServer.once('listening', resolve));
     appPort = /** @type {net.AddressInfo} */ (appServer.address()).port;
@@ -38,6 +41,9 @@ describe('Аутентификация локального API через се�
     resetApiToken();
     if (appServer) {
       await new Promise((resolve) => appServer.close(resolve));
+    }
+    if (testEnv) {
+      await testEnv.cleanup();
     }
   });
 

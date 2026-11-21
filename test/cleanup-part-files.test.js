@@ -19,7 +19,11 @@ describe('Безопасная очистка .part-файлов (cleanupStalePa
   });
 
   afterEach(async () => {
-    process.env.DOWNLOADS_DIR = originalDownloadsEnv;
+    if (originalDownloadsEnv !== undefined) {
+      process.env.DOWNLOADS_DIR = originalDownloadsEnv;
+    } else {
+      delete process.env.DOWNLOADS_DIR;
+    }
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
     } catch {}

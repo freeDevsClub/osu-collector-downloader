@@ -15,13 +15,16 @@ const {
 const { PORT, PAGINATION_PAGE_LIMIT, MAPSET_FETCH_BUDGET_MS } = require('../lib/config.js');
 const { safeJobForClient } = require('../lib/jobs.js');
 const { createTestJob } = require('./helpers/job-factory.js');
+const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
 describe('Мгновенный старт и ленивая подгрузка названий (Instant Start & Lazy Metadata)', () => {
   const originalFetch = globalThis.fetch;
   let serverInstance;
   let serverPort;
+  let testEnv;
 
   before(async () => {
+    testEnv = await setupIsolatedTestEnv('lazy-meta-test-');
     serverInstance = server.listen(0, '127.0.0.1');
     await new Promise((resolve) => serverInstance.once('listening', resolve));
     serverPort = /** @type {import('node:net').AddressInfo} */ (serverInstance.address()).port;
@@ -30,6 +33,9 @@ describe('Мгновенный старт и ленивая подгрузка �
   after(async () => {
     globalThis.fetch = originalFetch;
     await new Promise((resolve) => serverInstance.close(resolve));
+    if (testEnv) {
+      await testEnv.cleanup();
+    }
   });
 
   beforeEach(() => {

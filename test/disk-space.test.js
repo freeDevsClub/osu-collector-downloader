@@ -52,7 +52,8 @@ describe('Оценка и проверка свободного места на 
   });
 
   afterEach(async () => {
-    process.env.DOWNLOADS_DIR = originalDownloadsEnv;
+    if (originalDownloadsEnv !== undefined) process.env.DOWNLOADS_DIR = originalDownloadsEnv;
+    else delete process.env.DOWNLOADS_DIR;
     if (originalDataEnv !== undefined) process.env.DATA_DIR = originalDataEnv;
     else delete process.env.DATA_DIR;
     invalidateCachedSongs();
@@ -170,10 +171,32 @@ describe('Оценка и проверка свободного места на 
     );
   });
 
-  it('isSameFileSystem корректно сравнивает пути на одной и разных файловых системах', () => {
+  it('isSameFileSystem корректно сравнивает пути на одной и разных файловых системах', async () => {
     assert.equal(isSameFileSystem('C:\\downloads', 'C:\\Songs'), true);
     assert.equal(isSameFileSystem('C:\\downloads', 'D:\\Songs'), false);
     assert.equal(isSameFileSystem('D:\\downloads', 'D:\\Games\\osu!\\Songs'), true);
+
+    // Кросс-платформенная проверка для POSIX-путей (по device ID)
+    const dir1 = path.join(tempDownloadsDir, 'sub1');
+    const dir2 = path.join(tempDownloadsDir, 'sub2');
+    await fs.mkdir(dir1, { recursive: true });
+    await fs.mkdir(dir2, { recursive: true });
+    assert.equal(isSameFileSystem(dir1, dir2), true);
+
+    const origStatSync = nodeFs.statSync;
+    try {
+      /** @type {any} */ (nodeFs).statSync = (p) => {
+        if (p === dir1) return { dev: 1 };
+        if (p === dir2) return { dev: 2 };
+        return origStatSync(p);
+      };
+      // Если устройство fs.statSync(dir).dev различается на POSIX, считается разными ФС
+      if (process.platform !== 'win32') {
+        assert.equal(isSameFileSystem(dir1, dir2), false);
+      }
+    } finally {
+      nodeFs.statSync = origStatSync;
+    }
   });
 
   it('getCachedDownloadedSets / getCachedDownloadedSetsAsync корректно фильтрует файлы по размеру и маске', async () => {
