@@ -52,6 +52,30 @@
                 <span id="collection-count" class="chip"></span>
               </div>
               <div id="collection-meta" class="collection-meta"></div>
+              <div id="collection-toolbar" class="collection-toolbar">
+                <div class="collection-search-wrap">
+                  <input
+                    type="search"
+                    id="collection-search"
+                    class="collection-search"
+                    placeholder="Поиск по названию, исполнителю, автору или ID…"
+                    aria-label="Поиск по коллекции"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </div>
+                <div class="collection-controls-bar">
+                  <label class="selection-master-label" for="select-all-checkbox">
+                    <input type="checkbox" id="select-all-checkbox" checked />
+                    <span id="selection-counter" class="selection-counter">Выбрано: 0 из 0</span>
+                  </label>
+                  <div class="selection-actions">
+                    <button type="button" id="select-all-btn" class="btn-link">Выбрать все</button>
+                    <span class="selection-separator" aria-hidden="true">|</span>
+                    <button type="button" id="deselect-all-btn" class="btn-link">Снять все</button>
+                  </div>
+                </div>
+              </div>
               <ul id="map-list" class="map-list" aria-label="Список наборов карт"></ul>
             </div>
           </section>

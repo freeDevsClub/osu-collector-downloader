@@ -377,10 +377,89 @@ button.danger {
   justify-content: space-between;
   gap: 8px;
 }
+.collection-toolbar {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.collection-search-wrap {
+  position: relative;
+  width: 100%;
+}
+.collection-search {
+  width: 100%;
+  background: #15151c;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  box-sizing: border-box;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.collection-search:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px #ff6eaa22;
+}
+.collection-controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 4px;
+  font-size: 13px;
+}
+.selection-master-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #d8d5df;
+  font-size: 13px;
+  user-select: none;
+}
+.selection-master-label input[type='checkbox'] {
+  accent-color: var(--pink);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  margin: 0;
+}
+.selection-counter {
+  font-weight: 500;
+  color: var(--muted);
+}
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--pink);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: opacity 0.15s;
+}
+.btn-link:hover {
+  opacity: 0.8;
+}
+.selection-separator {
+  color: var(--line);
+}
 .map-list {
   list-style: none;
   border-top: 1px solid var(--line);
-  margin: 17px 0 0;
+  margin: 10px 0 0;
   padding: 12px 6px 0 0;
   display: flex;
   flex-direction: column;
@@ -421,6 +500,7 @@ button.danger {
   min-width: 0;
   transition:
     opacity 0.2s ease,
+    background-color 0.2s ease,
     border-color 0.2s ease;
 }
 .map-id.is-pending {
@@ -429,6 +509,35 @@ button.danger {
 }
 .map-id.is-pending .map-title {
   color: var(--muted);
+}
+.map-id.is-unselected {
+  opacity: 0.45;
+  background: #191921;
+}
+.map-id.is-unselected .map-title {
+  color: var(--muted);
+}
+.map-item-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  width: 100%;
+}
+.map-select-checkbox {
+  accent-color: var(--pink);
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.map-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 .map-title {
   color: #f0edf4;

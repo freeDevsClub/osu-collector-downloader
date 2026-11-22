@@ -3,9 +3,40 @@ import { byId, toAny, formatPluralRu, setStatus } from '../utils.js';
 import { api } from '../api.js';
 
 let collection = null;
+/** @type {Set<number>} */
+let selectedSetIds = new Set();
+let currentSearchFilter = '';
+let uiCallbacks = /** @type {{ updateDownloadButton?: () => void } | null} */ (null);
 
 export function getCollection() {
   return collection;
+}
+
+/**
+ * @returns {number[]}
+ */
+export function getSelectedSetIds() {
+  return Array.from(selectedSetIds);
+}
+
+/**
+ * @param {number[] | Set<number>} ids
+ */
+export function setSelectedSetIds(ids) {
+  selectedSetIds = ids instanceof Set ? new Set(ids) : new Set((ids || []).map(Number));
+  for (const [id, elements] of mapElementsById.entries()) {
+    const isSelected = selectedSetIds.has(Number(id));
+    if (elements?.checkbox) {
+      elements.checkbox.checked = isSelected;
+    }
+    if (elements?.item) {
+      elements.item.classList.toggle('is-unselected', !isSelected);
+    }
+  }
+  updateSelectionSummary();
+  if (uiCallbacks?.updateDownloadButton) {
+    uiCallbacks.updateDownloadButton();
+  }
 }
 
 /**
@@ -20,12 +51,17 @@ export function setCollection(c) {
     if (!collection.downloadedSet && Array.isArray(collection.downloadedSetIds)) {
       collection.downloadedSet = new Set(collection.downloadedSetIds.map(Number));
     }
+    if (Array.isArray(collection.setIds)) {
+      selectedSetIds = new Set(collection.setIds.map(Number));
+    } else if (Array.isArray(collection.maps)) {
+      selectedSetIds = new Set(collection.maps.map((m) => Number(m.id)));
+    }
   }
 }
 
 let mapListRenderId = 0;
 export const mapElementsById = new Map();
-/** @type {Array<{ item: HTMLElement, title: HTMLElement, creator: HTMLElement | null, badge: HTMLElement | null, currentId: number | undefined }>} */
+/** @type {Array<{ item: HTMLElement, title: HTMLElement, creator: HTMLElement | null, badge: HTMLElement | null, checkbox?: HTMLInputElement | null, currentId: number | undefined, map?: any }>} */
 export let mapListByIndex = [];
 let metadataPollTimer = null;
 let metadataPollInFlight = false;
@@ -77,6 +113,121 @@ export function refreshMapListBadges() {
 }
 
 /**
+ * Проверяет, удовлетворяет ли набор карт поисковому фильтру.
+ * @param {any} map
+ * @param {string | null | undefined} titleText
+ * @param {string | null | undefined} creatorText
+ * @param {string} query
+ * @returns {boolean}
+ */
+export function matchesFilter(map, titleText, creatorText, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const idStr = String(map?.id ?? '');
+  const title = (titleText || map?.title || '').toLowerCase();
+  const artist = (map?.artist || '').toLowerCase();
+  const creator = (creatorText || map?.creator || '').toLowerCase();
+  const label = (map?.label || '').toLowerCase();
+  return (
+    idStr.includes(q) ||
+    title.includes(q) ||
+    artist.includes(q) ||
+    creator.includes(q) ||
+    label.includes(q)
+  );
+}
+
+/**
+ * Обновляет счётчик выбранных карт и состояние мастер-чекбокса.
+ */
+export function updateSelectionSummary() {
+  const counter = byId('selection-counter');
+  const masterCheckbox = /** @type {HTMLInputElement | null} */ (byId('select-all-checkbox'));
+  const totalCount = collection?.setIds?.length || collection?.count || 0;
+  const selectedCount = selectedSetIds.size;
+
+  if (counter) {
+    counter.textContent = `Выбрано: ${selectedCount} из ${totalCount}`;
+  }
+
+  if (masterCheckbox) {
+    let visibleTotal = 0;
+    let visibleSelected = 0;
+    for (const record of mapListByIndex) {
+      if (!record || !record.item || record.item.hidden) continue;
+      visibleTotal++;
+      if (record.currentId && selectedSetIds.has(Number(record.currentId))) {
+        visibleSelected++;
+      }
+    }
+    if (visibleTotal === 0) {
+      masterCheckbox.checked = false;
+      masterCheckbox.indeterminate = false;
+    } else if (visibleSelected === visibleTotal) {
+      masterCheckbox.checked = true;
+      masterCheckbox.indeterminate = false;
+    } else if (visibleSelected === 0) {
+      masterCheckbox.checked = false;
+      masterCheckbox.indeterminate = false;
+    } else {
+      masterCheckbox.checked = false;
+      masterCheckbox.indeterminate = true;
+    }
+  }
+}
+
+/**
+ * Применяет строку поиска к элементам списка карт.
+ * @param {string} [query='']
+ */
+export function applySearchFilter(query = '') {
+  currentSearchFilter = (query || '').trim().toLowerCase();
+  for (const record of mapListByIndex) {
+    if (!record || !record.item) continue;
+    const matches = matchesFilter(
+      record.map,
+      record.title?.textContent,
+      record.creator?.textContent,
+      currentSearchFilter,
+    );
+    record.item.hidden = !matches;
+  }
+  updateSelectionSummary();
+}
+
+/**
+ * Выбирает или снимает выбор для всех видимых (не скрытых фильтром) элементов списка.
+ * @param {boolean} [select=true]
+ */
+export function selectVisible(select = true) {
+  for (const record of mapListByIndex) {
+    if (!record || !record.item || record.item.hidden) continue;
+    const mapId = Number(record.currentId);
+    if (!mapId) continue;
+    if (select) {
+      selectedSetIds.add(mapId);
+      if (record.checkbox) record.checkbox.checked = true;
+      record.item.classList.remove('is-unselected');
+    } else {
+      selectedSetIds.delete(mapId);
+      if (record.checkbox) record.checkbox.checked = false;
+      record.item.classList.add('is-unselected');
+    }
+  }
+  if (mapListByIndex.length === 0 && collection?.setIds && !currentSearchFilter) {
+    if (select) {
+      selectedSetIds = new Set(collection.setIds.map(Number));
+    } else {
+      selectedSetIds.clear();
+    }
+  }
+  updateSelectionSummary();
+  if (uiCallbacks?.updateDownloadButton) {
+    uiCallbacks.updateDownloadButton();
+  }
+}
+
+/**
  * @param {any[]} [maps=[]]
  */
 export function renderMapList(maps = []) {
@@ -97,8 +248,38 @@ export function renderMapList(maps = []) {
     for (let i = index; i < end; i++) {
       const map = maps[i];
       const isPending = !map?.title && !map?.artist;
+      const numId = Number(map?.id);
+      const isSelected = selectedSetIds.has(numId);
+
       const item = document.createElement('li');
-      item.className = 'map-id map-item' + (isPending ? ' is-pending' : '');
+      item.className = 'map-id map-item' + (isPending ? ' is-pending' : '') + (!isSelected ? ' is-unselected' : '');
+
+      const label = document.createElement('label');
+      label.className = 'map-item-inner';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'map-select-checkbox';
+      checkbox.checked = isSelected;
+      checkbox.setAttribute('aria-label', `Выбрать набор ${map?.id ?? ''}`);
+      checkbox.addEventListener('change', (e) => {
+        e.stopPropagation();
+        if (checkbox.checked) {
+          selectedSetIds.add(numId);
+          item.classList.remove('is-unselected');
+        } else {
+          selectedSetIds.delete(numId);
+          item.classList.add('is-unselected');
+        }
+        updateSelectionSummary();
+        if (uiCallbacks?.updateDownloadButton) {
+          uiCallbacks.updateDownloadButton();
+        }
+      });
+
+      const content = document.createElement('div');
+      content.className = 'map-item-content';
+
       const head = document.createElement('div');
       head.className = 'map-item-head';
       const title = document.createElement('span');
@@ -108,15 +289,22 @@ export function renderMapList(maps = []) {
       const badge = document.createElement('span');
       updateMapBadge(badge, map?.id);
       head.append(badge);
-      item.append(head);
+      content.append(head);
       let creator = null;
       if (map?.creator) {
         creator = document.createElement('span');
         creator.className = 'map-creator';
         creator.textContent = `маппер: ${map.creator}`;
-        item.append(creator);
+        content.append(creator);
       }
-      const record = { item, title, creator, badge, currentId: map?.id };
+      label.append(checkbox, content);
+      item.append(label);
+
+      if (currentSearchFilter) {
+        item.hidden = !matchesFilter(map, title.textContent, creator?.textContent, currentSearchFilter);
+      }
+
+      const record = { item, title, creator, badge, checkbox, currentId: map?.id, map };
       mapListByIndex[i] = record;
       if (map?.id) {
         mapElementsById.set(map.id, record);
@@ -125,6 +313,7 @@ export function renderMapList(maps = []) {
     }
     index += CHUNK_SIZE;
     list.append(fragment);
+    updateSelectionSummary();
     if (index < maps.length) {
       const idle = (typeof window !== 'undefined' && window.requestIdleCallback) || ((cb) => setTimeout(cb, 0));
       idle(() => {
@@ -146,11 +335,18 @@ export function updateMapListLabels(maps = [], offset = 0) {
     const elements = mapListByIndex[offset + i];
     if (!elements) continue;
 
+    elements.map = map;
+
     // Если у этой строки изменился setId (при перестановке незаполненных элементов)
     if (elements.currentId !== map.id) {
       if (elements.currentId) mapElementsById.delete(elements.currentId);
       elements.currentId = map.id;
       if (map.id) mapElementsById.set(map.id, elements);
+      if (elements.checkbox) {
+        elements.checkbox.setAttribute('aria-label', `Выбрать набор ${map?.id ?? ''}`);
+        elements.checkbox.checked = selectedSetIds.has(Number(map.id));
+        elements.item.classList.toggle('is-unselected', !selectedSetIds.has(Number(map.id)));
+      }
     }
 
     const isPending = !map.title && !map.artist;
@@ -177,14 +373,25 @@ export function updateMapListLabels(maps = [], offset = 0) {
         const creator = document.createElement('span');
         creator.className = 'map-creator';
         creator.textContent = creatorText;
-        elements.item.append(creator);
+        const content = elements.item.querySelector('.map-item-content') || elements.item;
+        content.append(creator);
         elements.creator = creator;
       }
     } else if (elements.creator) {
       elements.creator.remove();
       elements.creator = null;
     }
+
+    if (currentSearchFilter) {
+      elements.item.hidden = !matchesFilter(
+        map,
+        elements.title?.textContent,
+        elements.creator?.textContent,
+        currentSearchFilter,
+      );
+    }
   }
+  updateSelectionSummary();
 }
 
 /**
@@ -237,6 +444,9 @@ export function scheduleNextMetadataPoll(delay = 1200) {
   metadataPollTimer = setTimeout(() => {
     void pollMetadata();
   }, delay);
+  if (metadataPollTimer && typeof metadataPollTimer.unref === 'function') {
+    metadataPollTimer.unref();
+  }
 }
 
 export async function pollMetadata() {
@@ -343,6 +553,21 @@ export function renderCollection(data, callbacks = {}) {
   collection = data;
   collection.installedSet = new Set((data.installedSetIds || []).map(Number));
   collection.downloadedSet = new Set((data.downloadedSetIds || []).map(Number));
+
+  if (callbacks) {
+    uiCallbacks = callbacks;
+  }
+  currentSearchFilter = '';
+  const searchInput = /** @type {HTMLInputElement | null} */ (byId('collection-search'));
+  if (searchInput) searchInput.value = '';
+
+  const initialSetIds = Array.isArray(data.setIds)
+    ? data.setIds.map(Number)
+    : Array.isArray(data.maps)
+      ? data.maps.map((m) => Number(m.id))
+      : [];
+  selectedSetIds = new Set(initialSetIds);
+
   const collectionName = byId('collection-name');
   if (collectionName) collectionName.textContent = data.name;
   const collectionUploader = byId('collection-uploader');
@@ -375,6 +600,7 @@ export function renderCollection(data, callbacks = {}) {
   updateMetadataBadge(data);
 
   renderMapList(data.maps || (data.setIds || []).map((id) => ({ id })));
+  updateSelectionSummary();
   const collectionCard = byId('collection-card');
   collectionCard?.classList.add('visible');
   if (typeof callbacks?.updateDownloadButton === 'function') {
@@ -415,18 +641,45 @@ export function renderCollection(data, callbacks = {}) {
 // после показа списка пользователь мог отредактировать текст в input.
 export function collectionPayload() {
   const collectionUrl = /** @type {HTMLInputElement | null} */ (byId('collection-url'));
-  return collection?.id ? { url: String(collection.id) } : { url: collectionUrl ? collectionUrl.value.trim() : '' };
+  /** @type {{ url: string, selectedSetIds?: number[] }} */
+  const payload = collection?.id ? { url: String(collection.id) } : { url: collectionUrl ? collectionUrl.value.trim() : '' };
+  payload.selectedSetIds = getSelectedSetIds();
+  return payload;
 }
 
 /**
  * @param {{ updateDownloadButton?: () => void }} [callbacks={}]
  */
 export function initCollectionUi(callbacks = {}) {
+  if (callbacks) {
+    uiCallbacks = callbacks;
+  }
   const collectionForm = byId('collection-form');
   const collectionUrl = /** @type {HTMLInputElement | null} */ (byId('collection-url'));
   const previewButton = /** @type {HTMLButtonElement | null} */ (byId('preview-button'));
   const collectionCard = byId('collection-card');
   const collectionStatus = byId('collection-status');
+
+  const searchInput = /** @type {HTMLInputElement | null} */ (byId('collection-search'));
+  const masterCheckbox = /** @type {HTMLInputElement | null} */ (byId('select-all-checkbox'));
+  const selectAllBtn = byId('select-all-btn');
+  const deselectAllBtn = byId('deselect-all-btn');
+
+  searchInput?.addEventListener('input', () => {
+    applySearchFilter(searchInput.value);
+  });
+
+  masterCheckbox?.addEventListener('change', () => {
+    selectVisible(masterCheckbox.checked);
+  });
+
+  selectAllBtn?.addEventListener('click', () => {
+    selectVisible(true);
+  });
+
+  deselectAllBtn?.addEventListener('click', () => {
+    selectVisible(false);
+  });
 
   collectionForm?.addEventListener('submit', async (event) => {
     event.preventDefault();

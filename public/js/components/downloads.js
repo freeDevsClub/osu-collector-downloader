@@ -2,7 +2,7 @@
 import { byId, toAny, formatBytes, setStatus, notify } from '../utils.js';
 import { api, isSessionConnected } from '../api.js';
 import { updateMirrorsFromData } from './mirrors.js';
-import { getCollection, collectionPayload } from './collection.js';
+import { getCollection, collectionPayload, getSelectedSetIds } from './collection.js';
 
 export const JOB_STORAGE_KEY = 'osu-collector-downloader.jobId';
 export const NOVIDEO_STORAGE_KEY = 'osu-collector-downloader.noVideo';
@@ -80,8 +80,24 @@ export function updateDownloadButton(coll, connected) {
   const methodInputs = getMethodInputs();
 
   const method = selectedMethod();
-  const ready = Boolean(currentColl && currentColl.count) && methodReady(method, currentConnected) && !activeJob;
-  if (downloadButton) downloadButton.disabled = !ready;
+  const selectedIds = getSelectedSetIds();
+  const selectedCount = selectedIds ? selectedIds.length : 0;
+  const totalCount = currentColl?.count || currentColl?.setIds?.length || 0;
+
+  const hasSelection = Boolean(currentColl && totalCount > 0 && selectedCount > 0);
+  const ready = hasSelection && methodReady(method, currentConnected) && !activeJob;
+  if (downloadButton) {
+    downloadButton.disabled = !ready;
+    if (!activeJob) {
+      if (totalCount > 0 && selectedCount === 0) {
+        downloadButton.textContent = 'Выберите наборы для загрузки';
+      } else if (selectedCount > 0 && selectedCount < totalCount) {
+        downloadButton.textContent = `Скачать выбранные (${selectedCount})`;
+      } else {
+        downloadButton.textContent = 'Скачать наборы';
+      }
+    }
+  }
   if (checkboxNoVideo) {
     checkboxNoVideo.disabled = Boolean(activeJob);
   }
@@ -656,6 +672,65 @@ export async function restoreJob() {
 }
 
 /**
+ * @param {{ loadMirrors?: () => Promise<void> | void }} [options={}]
+ */
+export async function startDownloadJob(options = {}) {
+  const currentColl = getCollection();
+  if (!currentColl) return null;
+  const method = selectedMethod();
+  const downloadStatus = byId('download-status');
+  const downloadButton = /** @type {HTMLButtonElement | null} */ (byId('download-button'));
+  const checkboxNoVideo = /** @type {HTMLInputElement | null} */ (byId('checkbox-novideo'));
+  const resumeButton = /** @type {HTMLButtonElement | null} */ (byId('resume-button'));
+  const retryFailedButton = /** @type {HTMLButtonElement | null} */ (byId('retry-failed-button'));
+  const cancelButton = /** @type {HTMLButtonElement | null} */ (byId('cancel-button'));
+  const progressWrap = byId('progress-wrap');
+
+  if (!methodReady(method)) {
+    setStatus(downloadStatus, 'Сначала сохраните cookie osu_session.', 'error');
+    return null;
+  }
+  if (downloadButton) downloadButton.disabled = true;
+  setStatus(downloadStatus, 'Создаю задачу загрузки…');
+  progressWrap?.classList.add('visible');
+  try {
+    const noVideo = Boolean(checkboxNoVideo?.checked);
+    const job = await api(`/api/downloads?method=${method}${noVideo ? '&noVideo=1' : ''}`, {
+      method: 'POST',
+      body: JSON.stringify({ ...collectionPayload(), noVideo }),
+      timeoutMs: 15000,
+    });
+    pausedJob = null;
+    if (resumeButton) resumeButton.hidden = true;
+    if (retryFailedButton) retryFailedButton.hidden = true;
+    if (cancelButton) cancelButton.hidden = false;
+    startJobPolling(job.id);
+    updateJob(job);
+    if (options.loadMirrors) void options.loadMirrors();
+    return job;
+  } catch (rawError) {
+    const error = toAny(rawError);
+    if (error.name === 'TimeoutError') {
+      setStatus(
+        downloadStatus,
+        'Локальный сервер не ответил вовремя — задача могла создаться; обновите страницу, чтобы вернуться к ней.',
+        'warn',
+      );
+      if (downloadButton) downloadButton.disabled = false;
+      return null;
+    }
+    setStatus(downloadStatus, error.message, 'error');
+    if (pausedJob) {
+      if (resumeButton) resumeButton.hidden = false;
+      if (cancelButton) cancelButton.hidden = false;
+    }
+    if (downloadButton) downloadButton.disabled = false;
+    updateDownloadButton();
+    throw error;
+  }
+}
+
+/**
  * @param {{ loadMirrors?: () => Promise<void> }} [options={}]
  */
 export function initDownloadsUi(options = {}) {
@@ -697,49 +772,9 @@ export function initDownloadsUi(options = {}) {
   });
 
   downloadButton?.addEventListener('click', async () => {
-    const currentColl = getCollection();
-    if (!currentColl) return;
-    const method = selectedMethod();
-    if (!methodReady(method)) {
-      setStatus(downloadStatus, 'Сначала сохраните cookie osu_session.', 'error');
-      return;
-    }
-    downloadButton.disabled = true;
-    setStatus(downloadStatus, 'Создаю задачу загрузки…');
-    progressWrap?.classList.add('visible');
     try {
-      const noVideo = Boolean(checkboxNoVideo?.checked);
-      const job = await api(`/api/downloads?method=${method}${noVideo ? '&noVideo=1' : ''}`, {
-        method: 'POST',
-        body: JSON.stringify({ ...collectionPayload(), noVideo }),
-        timeoutMs: 15000,
-      });
-      pausedJob = null;
-      if (resumeButton) resumeButton.hidden = true;
-      if (retryFailedButton) retryFailedButton.hidden = true;
-      if (cancelButton) cancelButton.hidden = false;
-      startJobPolling(job.id);
-      updateJob(job);
-      if (options.loadMirrors) void options.loadMirrors();
-    } catch (rawError) {
-      const error = toAny(rawError);
-      if (error.name === 'TimeoutError') {
-        setStatus(
-          downloadStatus,
-          'Локальный сервер не ответил вовремя — задача могла создаться; обновите страницу, чтобы вернуться к ней.',
-          'warn',
-        );
-        downloadButton.disabled = false;
-        return;
-      }
-      setStatus(downloadStatus, error.message, 'error');
-      if (pausedJob) {
-        if (resumeButton) resumeButton.hidden = false;
-        if (cancelButton) cancelButton.hidden = false;
-      }
-      downloadButton.disabled = false;
-      updateDownloadButton();
-    }
+      await startDownloadJob(options);
+    } catch {}
   });
 
   resumeButton?.addEventListener('click', async () => {
