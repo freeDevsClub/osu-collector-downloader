@@ -742,7 +742,6 @@ export function initDownloadsUi(options = {}) {
   const sessionInput = /** @type {HTMLInputElement | null} */ (byId('session-cookie'));
   const sessionAdvancedDetails = /** @type {HTMLDetailsElement | null} */ (byId('session-advanced-details'));
   const downloadStatus = byId('download-status');
-  const progressWrap = byId('progress-wrap');
 
   const methodInputs = getMethodInputs();
 
