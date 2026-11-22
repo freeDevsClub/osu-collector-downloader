@@ -17,6 +17,7 @@ const {
   getActiveJob,
   setActiveJob,
   waitForPendingSaveState,
+  checkAndSkipIfAvailable,
 } = require('../lib/jobs.js');
 const { createTestJob } = require('./helpers/job-factory.js');
 const { server } = require('../server.js');
@@ -498,5 +499,93 @@ describe('Повтор загрузки наборов с ошибками (Retr
     assert.equal(jobFatal.doneIds.has(802), true);
     assert.equal(jobFatal.doneIds.has(803), true);
     assert.equal(jobCounters(jobFatal).failed, 0);
+  });
+
+  it('при повторе ошибок (retryFailedJob) наборы с ошибкой пост-обработки не пропускаются через checkAndSkipIfAvailable, а повторно обрабатываются', async () => {
+    const { getDownloadsDir } = require('../lib/config.js');
+    const { saveSettings, resetSettingsForTest, isSetInOsuSongs } = require('../lib/osu.js');
+    const downloadsDir = getDownloadsDir();
+
+    // Создаем тестовую директорию Songs
+    const tempSongsDir = path.join(testEnv.tempBaseDir, 'osu_fake_retry1', 'Songs');
+    await fs.mkdir(tempSongsDir, { recursive: true });
+
+    await saveSettings({
+      osuPath: tempSongsDir,
+      checkExisting: true,
+      postDownloadAction: 'move',
+    });
+
+    const setId = 901;
+    const oszPath = path.join(downloadsDir, `${setId}.osz`);
+    await fs.writeFile(oszPath, validZipBuffer);
+
+    // Задача, где setId был скачан, но упал на пост-обработке
+    const job = createTestJob({
+      id: 'job_test_retry_post_download',
+      method: 'mirror',
+      setIds: [setId],
+      doneIds: [],
+      errIds: [setId],
+      postDownloadErrors: [[setId, 'Permission denied during move']],
+      errorsById: [[setId, { id: setId, name: 'Map 901', error: 'Permission denied during move', isPostDownload: true }]],
+      status: 'finished_with_errors',
+    });
+    jobs.set(job.id, job);
+
+    // 1. Проверяем, что checkAndSkipIfAvailable не просто скипает набор, а успешно запускает handlePostDownload (move)
+    const skipped = await checkAndSkipIfAvailable(setId, job);
+    assert.equal(skipped, true, 'checkAndSkipIfAvailable возвращает true после успешной пост-обработки');
+    assert.equal(job.doneIds.has(setId), true, 'Набор должен попасть в doneIds');
+    assert.equal(job.skipIds.has(setId), false, 'Набор НЕ должен ошибочно попадать в skipIds');
+    assert.equal(job.errIds.has(setId), false, 'Набор должен быть удален из errIds');
+    assert.equal(job.postDownloadErrors.has(setId), false, 'Набор должен быть удален из postDownloadErrors');
+    assert.equal(isSetInOsuSongs(setId), true, 'Набор должен оказаться в osu! Songs');
+
+    // Очистка
+    resetSettingsForTest();
+  });
+
+  it('при повторе ошибки пост-обработки в checkAndSkipIfAvailable карта сохраняет статус ошибки и не помечается как skipIds', async () => {
+    const { getDownloadsDir } = require('../lib/config.js');
+    const { saveSettings, resetSettingsForTest } = require('../lib/osu.js');
+    const downloadsDir = getDownloadsDir();
+
+    const tempSongsDir = path.join(testEnv.tempBaseDir, 'osu_fake_retry2', 'Songs');
+    await fs.mkdir(tempSongsDir, { recursive: true });
+
+    await saveSettings({
+      osuPath: tempSongsDir,
+      checkExisting: true,
+      postDownloadAction: 'extract',
+    });
+
+    const setId = 902;
+    const oszPath = path.join(downloadsDir, `${setId}.osz`);
+    // Создаем zip, который валиден по структуре, но не содержит файлов карт .osu (extractZip с validateBeatmap: true выбросит ошибку)
+    await fs.writeFile(oszPath, validZipBuffer);
+
+    const job = createTestJob({
+      id: 'job_test_retry_extract_fail',
+      method: 'mirror',
+      setIds: [setId],
+      doneIds: [],
+      errIds: [setId],
+      postDownloadErrors: [[setId, 'В архиве отсутствуют файлы карт']],
+      errorsById: [[setId, { id: setId, name: 'Map 902', error: 'В архиве отсутствуют файлы карт', isPostDownload: true }]],
+      status: 'finished_with_errors',
+    });
+    jobs.set(job.id, job);
+
+    const handled = await checkAndSkipIfAvailable(setId, job);
+    assert.equal(handled, true, 'Обработка завершена');
+    assert.equal(job.doneIds.has(setId), false, 'Не должен попасть в doneIds');
+    assert.equal(job.skipIds.has(setId), false, 'НЕ должен попасть в skipIds!');
+    assert.equal(job.errIds.has(setId), true, 'Должен остаться в errIds');
+    assert.equal(job.postDownloadErrors.has(setId), true, 'Должен остаться в postDownloadErrors');
+    assert.equal(job.errorsById.has(setId), true, 'Должен остаться в errorsById');
+
+    await fs.unlink(oszPath).catch(() => {});
+    resetSettingsForTest();
   });
 });

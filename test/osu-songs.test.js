@@ -32,6 +32,7 @@ const {
   buildBeatmapFolderName,
   handlePostDownload,
   selectFolderDialog,
+  resetSettingsForTest,
 } = require('../lib/osu.js');
 
 const { jobFilePath, downloadSet, verifyZipFile } = require('../lib/downloader.js');
@@ -771,6 +772,70 @@ describe('Интеграция с локальной директорией osu!
       );
       assert.equal(isSetInOsuSongs(setId), false, 'Набор НЕ должен помечаться как установленный в osu!');
       assert.equal(fs.existsSync(oszPath), true, 'Исходный .osz не должен удаляться при ошибке');
+
+      // Очистка
+      await fs.promises.unlink(oszPath).catch(() => {});
+    } finally {
+      if (originalDownloads !== undefined) process.env.DOWNLOADS_DIR = originalDownloads;
+      else delete process.env.DOWNLOADS_DIR;
+    }
+  });
+
+  test('handlePostDownload: при невалидных настройках osu! и включенной пост-обработке возвращает warning и добавляет его в job.warnings', async () => {
+    const originalDownloads = process.env.DOWNLOADS_DIR;
+    process.env.DOWNLOADS_DIR = mockDownloadsDir;
+    try {
+      resetSettingsForTest();
+      // Настройки невалидны: путь не задан (valid = false)
+      const setId = 88005;
+      const oszPath = path.join(mockDownloadsDir, `${setId}.osz`);
+      await fs.promises.writeFile(oszPath, 'osz content');
+
+      const mockJob = createTestJob({
+        id: 'job_test_invalid_osu',
+        mapsById: [[setId, { artist: 'Artist', title: 'Title' }]],
+      });
+
+      // Имитируем настройки: postDownloadAction = 'extract', но valid = false
+      const current = getSettings();
+      current.valid = false;
+      current.songsDir = null;
+      current.postDownloadAction = 'extract';
+
+      const res = await handlePostDownload(setId, mockJob);
+      assert.equal(res.action, 'none');
+      assert.ok(res.warning);
+      assert.ok(mockJob.warnings.size > 0);
+      assert.match(Array.from(mockJob.warnings)[0], /Пост-обработка пропущена/);
+
+      // Очистка
+      await fs.promises.unlink(oszPath).catch(() => {});
+    } finally {
+      if (originalDownloads !== undefined) process.env.DOWNLOADS_DIR = originalDownloads;
+      else delete process.env.DOWNLOADS_DIR;
+    }
+  });
+
+  test('handlePostDownload: при postDownloadAction === none не добавляет предупреждений', async () => {
+    const originalDownloads = process.env.DOWNLOADS_DIR;
+    process.env.DOWNLOADS_DIR = mockDownloadsDir;
+    try {
+      resetSettingsForTest();
+      const setId = 88006;
+      const oszPath = path.join(mockDownloadsDir, `${setId}.osz`);
+      await fs.promises.writeFile(oszPath, 'osz content');
+
+      const mockJob = createTestJob({
+        id: 'job_test_none_action',
+      });
+
+      const current = getSettings();
+      current.postDownloadAction = 'none';
+
+      const res = await handlePostDownload(setId, mockJob);
+      assert.equal(res.action, 'none');
+      assert.equal(res.warning, undefined);
+      assert.equal(mockJob.warnings.size, 0);
 
       // Очистка
       await fs.promises.unlink(oszPath).catch(() => {});

@@ -473,10 +473,11 @@ export function updateJob(job) {
     }
   }
 
+  const hasWarnings = Array.isArray(job.warnings) && job.warnings.length > 0;
   const tone =
     job.failed && job.status === 'finished_with_errors'
       ? 'error'
-      : job.status === 'paused'
+      : job.status === 'paused' || (job.status === 'finished' && hasWarnings)
         ? 'warn'
         : job.status === 'finished'
           ? 'success'
@@ -542,9 +543,18 @@ export function finishJob(job, errorMessage = '') {
   }
 
   if (errorMessage) setStatus(downloadStatus, errorMessage, 'error');
-  else if (job?.status === 'finished')
-    setStatus(downloadStatus, 'Готово! Файлы находятся в папке downloads.', 'success');
-  else if (job?.status === 'paused')
+  else if (job?.status === 'finished') {
+    if (Array.isArray(job?.warnings) && job.warnings.length > 0) {
+      setStatus(
+        downloadStatus,
+        job.message || 'Готово! Файлы находятся в папке downloads (интеграция с osu! пропущена).',
+        'warn',
+      );
+      notify('Внимание: карты скачаны в downloads, но интеграция с osu! пропущена. Проверьте настройки папки osu!.');
+    } else {
+      setStatus(downloadStatus, 'Готово! Файлы находятся в папке downloads.', 'success');
+    }
+  } else if (job?.status === 'paused')
     setStatus(
       downloadStatus,
       job.message || 'Зеркала временно ограничили загрузки — нажмите «Продолжить» позже.',

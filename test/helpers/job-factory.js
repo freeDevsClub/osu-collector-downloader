@@ -66,6 +66,26 @@ function createTestJob(overrides = {}) {
     }
   }
 
+  // Если переданы postDownloadErrors в виде массива пар или объекта
+  if (opts.postDownloadErrors && !(opts.postDownloadErrors instanceof Map)) {
+    if (Array.isArray(opts.postDownloadErrors)) {
+      opts.postDownloadErrors = new Map(
+        opts.postDownloadErrors.map((item) =>
+          Array.isArray(item) ? [Number(item[0]), String(item[1] || '')] : [Number(item), ''],
+        ),
+      );
+    } else if (typeof opts.postDownloadErrors === 'object') {
+      opts.postDownloadErrors = new Map(
+        Object.entries(opts.postDownloadErrors).map(([k, v]) => [Number(k), String(v || '')]),
+      );
+    }
+  }
+
+  // Если переданы warnings в виде массива
+  if (opts.warnings && !(opts.warnings instanceof Set)) {
+    opts.warnings = new Set(Array.isArray(opts.warnings) ? opts.warnings.map(String) : []);
+  }
+
   return createJob(opts);
 }
 

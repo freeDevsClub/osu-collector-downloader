@@ -139,6 +139,8 @@ describe('Сохранение состояния очереди на диск (
       skipIds: [200],
       errIds: [300],
       errorsById: [[300, { id: 300, name: 'Map 300', error: 'HTTP 404' }]],
+      postDownloadErrors: [[300, 'CRC mismatch']],
+      warnings: ['osu! Songs warning'],
       mapsById: [
         [100, { id: 100, label: 'Artist 1 - Title 1' }],
         [200, { id: 200, label: 'Artist 2 - Title 2' }],
@@ -160,6 +162,8 @@ describe('Сохранение состояния очереди на диск (
     assert.equal(serialized.noVideo, true);
     assert.equal(serialized.errors.length, 1);
     assert.equal(serialized.errors[0].id, 300);
+    assert.deepEqual(serialized.postDownloadErrors, [[300, 'CRC mismatch']]);
+    assert.deepEqual(serialized.warnings, ['osu! Songs warning']);
 
     const deserialized = deserializeJob(serialized);
     assert.ok(deserialized);
@@ -170,6 +174,10 @@ describe('Сохранение состояния очереди на диск (
     assert.ok(deserialized.errIds.has(300));
     assert.ok(deserialized.errorsById instanceof Map);
     assert.equal(deserialized.errorsById.get(300)?.error, 'HTTP 404');
+    assert.ok(deserialized.postDownloadErrors instanceof Map);
+    assert.equal(deserialized.postDownloadErrors.get(300), 'CRC mismatch');
+    assert.ok(deserialized.warnings instanceof Set);
+    assert.ok(deserialized.warnings.has('osu! Songs warning'));
     assert.equal(deserialized.mapsById.get(100)?.label, 'Artist 1 - Title 1');
     assert.equal(deserialized.status, 'paused');
     assert.equal(deserialized.message, 'Пауза из-за зеркал');
