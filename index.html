@@ -3,49 +3,59 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#15151c" />
+    <meta name="theme-color" content="#111116" />
+    <meta name="description" content="Локальная загрузка наборов карт из osu!Collector" />
     <title>osu!Collector Downloader</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/public/js/app.js"></script>
   </head>
   <body>
     <main class="shell">
-      <header>
-        <div class="logo" aria-hidden="true">osu!</div>
-        <div>
-          <h1>osu!Collector Downloader</h1>
-          <p>Загружайте коллекции карт на свой компьютер</p>
+      <header class="app-header">
+        <div class="brand-mark" aria-hidden="true"><span>o!</span></div>
+        <div class="header-copy">
+          <h1>collector<span> / </span>downloader</h1>
+          <p>osu! beatmap collection manager</p>
         </div>
         <div class="badge" role="note" aria-label="Только на этом компьютере">
-          <span class="badge-text">Только на этом компьютере</span>
+          <span class="badge-text">Локальное приложение</span>
         </div>
       </header>
 
-      <div class="grid">
-        <div class="cards-col">
-          <section class="card">
-            <h2>1. Ссылка на коллекцию</h2>
-            <p class="hint">Публичная коллекция с osucollector.com</p>
+      <div class="grid app-grid">
+        <div class="cards-col main-column">
+          <section class="card collection-workspace" aria-labelledby="collection-heading">
+            <div class="panel-heading collection-heading">
+              <div>
+                <span class="eyebrow">01 <span>/</span> КОЛЛЕКЦИЯ</span>
+                <h2 id="collection-heading">Выбери, что скачать</h2>
+                <p class="hint">Вставь ссылку на публичную коллекцию osu!Collector или её ID.</p>
+              </div>
+              <span class="panel-glyph" aria-hidden="true">⌁</span>
+            </div>
+
             <form id="collection-form">
               <div class="field">
-                <label for="collection-url">URL или ID коллекции</label>
-                <div class="field-row">
+                <label for="collection-url">ССЫЛКА ИЛИ ID КОЛЛЕКЦИИ</label>
+                <div class="field-row collection-input-row">
                   <input
                     id="collection-url"
                     name="url"
                     type="text"
-                    placeholder="https://osucollector.com/collections/23905/… или ID"
+                    placeholder="https://osucollector.com/collections/…"
                     autocomplete="url"
                     required
                   />
-                  <button id="preview-button" type="submit">Показать карты</button>
+                  <button id="preview-button" type="submit"><span aria-hidden="true">↗</span> Загрузить список</button>
                 </div>
               </div>
             </form>
             <div id="collection-status" class="status" role="status" aria-live="polite"></div>
+
             <div id="collection-card" class="collection">
               <div class="collection-top">
                 <div>
+                  <span class="eyebrow collection-loaded-label">ЗАГРУЖЕННАЯ КОЛЛЕКЦИЯ</span>
                   <h2 id="collection-name"></h2>
                   <div id="collection-uploader" class="small"></div>
                 </div>
@@ -71,7 +81,7 @@
                   </label>
                   <div class="selection-actions">
                     <button type="button" id="select-all-btn" class="btn-link">Выбрать все</button>
-                    <span class="selection-separator" aria-hidden="true">|</span>
+                    <span class="selection-separator" aria-hidden="true">·</span>
                     <button type="button" id="deselect-all-btn" class="btn-link">Снять все</button>
                   </div>
                 </div>
@@ -87,109 +97,138 @@
                       В игре <span id="tab-count-installed" class="tab-count"></span>
                     </button>
                   </div>
-                  <span class="collection-preview-hint">Нажмите на карту для предпросмотра на osu.ppy.sh</span>
+                  <span class="collection-preview-hint">Открой карту на osu.ppy.sh</span>
                 </div>
               </div>
               <ul id="map-list" class="map-list" aria-label="Список наборов карт"></ul>
             </div>
-          </section>
 
-          <section id="osu-card" class="card">
-            <h2>2. Интеграция с osu! Songs</h2>
-            <p class="hint">Проверка имеющихся в игре карт и автоматическое перемещение или распаковка</p>
-            <div class="field">
-              <label for="osu-path-input">Путь к папке игры osu! или Songs</label>
-              <div class="field-row">
-                <input
-                  id="osu-path-input"
-                  name="osuPath"
-                  type="text"
-                  placeholder="Например: C:\Games\osu! или C:\Games\osu!\Songs"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <button id="osu-path-browse" class="secondary" type="button" title="Выбрать папку в Проводнике Windows">
-                  Обзор…
-                </button>
-                <button id="osu-path-save" type="button">Сохранить</button>
-              </div>
+            <div class="empty-state">
+              <div class="empty-orbit" aria-hidden="true"><span>♪</span></div>
+              <strong>Коллекция появится здесь</strong>
+              <p>После загрузки можно просмотреть карты, отфильтровать уже установленные и выбрать только нужные наборы.</p>
+              <a href="https://osucollector.com/collections/23905/stream-180-189" target="_blank" rel="noreferrer">
+                Посмотреть пример коллекции <span aria-hidden="true">↗</span>
+              </a>
             </div>
-            <div class="session-state">
+          </section>
+        </div>
+
+        <aside class="cards-col sidebar-column">
+          <section id="osu-card" class="card settings-card" aria-labelledby="osu-heading">
+            <div class="panel-heading compact-heading">
+              <div>
+                <span class="eyebrow">02 <span>/</span> БИБЛИОТЕКА</span>
+                <h2 id="osu-heading">osu! Songs</h2>
+              </div>
+              <span class="panel-icon" aria-hidden="true">◉</span>
+            </div>
+            <div class="session-state library-state">
               <div class="session-label">
                 <span id="osu-dot" class="session-dot"></span>
                 <span id="osu-text">Проверка пути к osu!…</span>
               </div>
-              <button id="osu-rescan" class="secondary" type="button">Обновить список карт</button>
+              <button id="osu-rescan" class="icon-button secondary" type="button" title="Обновить список карт" aria-label="Обновить список карт">↻</button>
             </div>
             <div id="osu-status" class="status" role="status" aria-live="polite"></div>
 
-            <div class="download-options mt-14">
-              <label class="checkbox-option" id="label-check-existing">
-                <input type="checkbox" id="checkbox-check-existing" checked />
-                <span>Проверять наличие в игре и пропускать уже имеющиеся наборы</span>
+            <details id="osu-settings-details" class="extra-methods-details settings-details">
+              <summary class="extra-methods-summary">
+                <span>Настроить папку и импорт</span>
+                <span class="chevron" aria-hidden="true">⌄</span>
+              </summary>
+              <div class="settings-details-content">
+                <div class="field">
+                  <label for="osu-path-input">ПУТЬ К ИГРЕ ИЛИ ПАПКЕ SONGS</label>
+                  <div class="field-row path-input-row">
+                    <input
+                      id="osu-path-input"
+                      name="osuPath"
+                      type="text"
+                      placeholder="C:\Games\osu! или …\Songs"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                    <button id="osu-path-browse" class="secondary" type="button" title="Выбрать папку в Проводнике Windows">Обзор</button>
+                  </div>
+                  <button id="osu-path-save" class="text-action" type="button">Сохранить путь</button>
+                </div>
+
+                <div class="download-options mt-14">
+                  <label class="checkbox-option" id="label-check-existing">
+                    <input type="checkbox" id="checkbox-check-existing" checked />
+                    <span>Пропускать уже установленные наборы</span>
+                  </label>
+                </div>
+
+                <fieldset class="field mt-14 post-download-fieldset" role="radiogroup" aria-labelledby="post-download-legend">
+                  <legend id="post-download-legend">Что делать со скачанными картами:</legend>
+                  <div class="method-row">
+                    <label class="method-option" id="option-action-extract">
+                      <input type="radio" name="post-download-action" value="extract" id="action-extract" />
+                      <span>Распаковать в Songs<small>Папка карты появится в игре</small></span>
+                    </label>
+                    <label class="method-option" id="option-action-none">
+                      <input type="radio" name="post-download-action" value="none" id="action-none" checked />
+                      <span>Оставить в downloads/<small>Без переноса в игру</small></span>
+                    </label>
+                  </div>
+
+                  <details id="extra-actions-details" class="extra-methods-details nested-details">
+                    <summary class="extra-methods-summary">
+                      <span>Другие способы импорта (.osz)</span>
+                      <span class="chevron" aria-hidden="true">⌄</span>
+                    </summary>
+                    <div class="method-row extra-methods-row">
+                      <label class="method-option" id="option-action-move">
+                        <input type="radio" name="post-download-action" value="move" id="action-move" />
+                        <span>Переместить в Songs<small>Импорт при открытии или F5</small></span>
+                      </label>
+                      <label class="method-option" id="option-action-copy">
+                        <input type="radio" name="post-download-action" value="copy" id="action-copy" />
+                        <span>Копировать в Songs<small>Оставить копию в downloads/</small></span>
+                      </label>
+                    </div>
+                  </details>
+                </fieldset>
+              </div>
+            </details>
+          </section>
+
+          <section class="card download-card">
+            <div class="panel-heading compact-heading">
+              <div>
+                <span class="eyebrow">03 <span>/</span> ЗАГРУЗКА</span>
+                <h2>3. Скачивание</h2>
+              </div>
+              <span class="download-indicator" aria-hidden="true"></span>
+            </div>
+            <p class="hint download-hint">По умолчанию используются публичные зеркала — вход в аккаунт не требуется.</p>
+
+            <div class="method-row download-methods" role="radiogroup" aria-label="Способ загрузки">
+              <label class="method-option" id="option-mirror">
+                <input type="radio" name="download-method" value="mirror" id="method-mirror" checked />
+                <span>Зеркала <small>osu.direct · Hinamizawa · osu!dl</small></span>
+              </label>
+              <label class="method-option" id="option-session">
+                <input type="radio" name="download-method" value="session" id="method-session" />
+                <span>osu_session <small>Резервный вариант с аккаунтом</small></span>
               </label>
             </div>
 
-            <fieldset class="field mt-14 post-download-fieldset" role="radiogroup" aria-labelledby="post-download-legend">
-              <legend id="post-download-legend">Что делать со скачанными картами:</legend>
-              <div class="method-row">
-                <label class="method-option" id="option-action-extract">
-                  <input type="radio" name="post-download-action" value="extract" id="action-extract" />
-                  <span>Распаковывать в Songs<small>создаёт папку карты прямо в игре</small></span>
-                </label>
-                <label class="method-option" id="option-action-none">
-                  <input type="radio" name="post-download-action" value="none" id="action-none" checked />
-                  <span>Оставлять в downloads/<small>без переноса в игру</small></span>
-                </label>
-              </div>
-
-              <details id="extra-actions-details" class="extra-methods-details">
-                <summary class="extra-methods-summary">
-                  <span>Дополнительные методы (.osz в Songs)</span>
-                  <span class="chevron" aria-hidden="true">▾</span>
-                </summary>
-                <div class="method-row extra-methods-row">
-                  <label class="method-option" id="option-action-move">
-                    <input type="radio" name="post-download-action" value="move" id="action-move" />
-                    <span>Перемещать .osz в Songs<small>osu! импортирует при открытии или по F5</small></span>
-                  </label>
-                  <label class="method-option" id="option-action-copy">
-                    <input type="radio" name="post-download-action" value="copy" id="action-copy" />
-                    <span>Копировать .osz в Songs<small>сохранять копию и в downloads/</small></span>
-                  </label>
-                </div>
-              </details>
-            </fieldset>
-          </section>
-
-          <section class="card">
-            <h2>3. Скачивание</h2>
-            <p class="hint">Файлы берутся с зеркал osu! — без cookie и без входа в аккаунт</p>
-            <div class="method-row" role="radiogroup" aria-label="Способ загрузки">
-              <label class="method-option" id="option-mirror"
-                ><input type="radio" name="download-method" value="mirror" id="method-mirror" checked /><span
-                  >Зеркала (рекомендуется)<small>osu.direct, Hinamizawa, osu!dl</small></span
-                ></label
-              >
-              <label class="method-option" id="option-session"
-                ><input type="radio" name="download-method" value="session" id="method-session" /><span
-                  >Cookie osu_session<small>резервный способ с аккаунтом</small></span
-                ></label
-              >
-            </div>
             <div class="mirror-panel">
-              <div class="mirror-head">Зеркала</div>
+              <div class="mirror-head">СОСТОЯНИЕ ЗЕРКАЛ</div>
               <div id="mirror-status" class="mirror-status"></div>
             </div>
 
             <details id="session-advanced-details" class="extra-methods-details">
               <summary class="extra-methods-summary">
-                <span>Резервная авторизация: Cookie osu_session (расширенные настройки)</span>
-                <span class="chevron" aria-hidden="true">▾</span>
+                <span>Настроить резервную авторизацию</span>
+                <span class="chevron" aria-hidden="true">⌄</span>
               </summary>
               <div class="session-panel">
                 <div class="notice session-risk-notice">
-                  <strong>⚠️ Внимание: Полный доступ к аккаунту</strong>
+                  <strong>⚠️ Полный доступ к аккаунту</strong>
                   <p>
                     Cookie <code>osu_session</code> даёт полный веб-доступ к вашему аккаунту на osu.ppy.sh. Используйте
                     этот способ <em>только</em> если нужные карты недоступны ни на одном зеркале. Сервер хранит cookie
@@ -197,13 +236,13 @@
                   </p>
                 </div>
                 <form id="session-form">
-                  <label for="session-cookie">Значение cookie <code>osu_session</code></label>
+                  <label for="session-cookie">ЗНАЧЕНИЕ COOKIE <code>osu_session</code></label>
                   <div class="field-row">
                     <input
                       id="session-cookie"
                       name="session"
                       type="password"
-                      placeholder="Вставьте значение cookie osu_session"
+                      placeholder="Вставьте значение cookie"
                       autocomplete="off"
                       spellcheck="false"
                     />
@@ -224,24 +263,26 @@
               </div>
             </details>
 
-            <div class="download-options">
+            <div class="download-options video-option">
               <label class="checkbox-option" id="label-novideo">
                 <input type="checkbox" id="checkbox-novideo" />
-                <span>Скачивать без видео<small>(быстрее, экономит до 70% места)</small></span>
+                <span>Не скачивать видео <small>Экономит место и время</small></span>
               </label>
             </div>
+
             <div class="action-row">
-              <button id="download-button" type="button" disabled>Скачать наборы</button>
+              <button id="download-button" type="button" disabled><span aria-hidden="true">↓</span> Скачать наборы</button>
               <button id="resume-button" type="button" class="secondary" hidden>Продолжить</button>
               <button id="retry-failed-button" type="button" class="secondary warning" hidden>Повторить ошибки</button>
               <button id="cancel-button" type="button" class="secondary danger" hidden>Остановить</button>
             </div>
+
             <div id="progress-wrap" class="progress-wrap">
               <details id="transfers-details" class="transfers-dropdown">
                 <summary class="transfers-summary">
                   <div class="transfers-title-wrap">
                     <span id="progress-label">Подготовка…</span>
-                    <span id="transfers-chevron" class="transfers-chevron" aria-hidden="true">▾</span>
+                    <span id="transfers-chevron" class="transfers-chevron" aria-hidden="true">⌄</span>
                   </div>
                   <span id="progress-percent">0%</span>
                 </summary>
@@ -260,7 +301,7 @@
               </div>
               <div class="stats">
                 <div class="stat"><b id="downloaded-count">0</b><span>скачано</span></div>
-                <div class="stat"><b id="skipped-count">0</b><span>уже было</span></div>
+                <div class="stat"><b id="skipped-count">0</b><span>пропущено</span></div>
                 <div class="stat"><b id="failed-count">0</b><span>ошибок</span></div>
               </div>
               <div id="download-status" class="status" role="status" aria-live="polite"></div>
@@ -269,75 +310,31 @@
                 <div id="failed-list" class="failed-list"></div>
               </details>
             </div>
-            <div class="notice">
-              <strong>Зеркала — сторонние сервисы</strong>
-              <p>
-                Если набор не нашёлся, приложение само пробует следующее зеркало. Ничего не найдено — переключитесь на
-                cookie
-                <code>osu_session</code>.
-              </p>
-            </div>
-            <div class="notice">
-              <strong>Обратите внимание</strong>
-              <p>
-                Скачивание с сессией аккаунта происходит не через официальный клиент. Массовая автоматическая загрузка в
-                обход osu! может, по правилам сервиса, привести к ограничению аккаунта или IP — используйте её умеренно
-                и на свой риск.
-              </p>
-            </div>
-          </section>
-        </div>
 
-        <aside class="cards-col">
-          <section class="card">
-            <h2>Как это работает</h2>
-            <ol class="steps">
-              <li>
-                <span class="step-no">1</span
-                ><span
-                  ><strong>Вставьте ссылку коллекции</strong><br />Список наборов берётся из публичного API
-                  osu!Collector.</span
-                >
-              </li>
-              <li>
-                <span class="step-no">2</span
-                ><span
-                  ><strong>Скачайте карты</strong><br />Файлы <code>.osz</code> приходят с зеркал и сохраняются в папку
-                  <code>downloads</code>.</span
-                >
-              </li>
-              <li>
-                <span class="step-no">3</span
-                ><span
-                  ><strong>Если набора нет на зеркалах</strong><br />Добавьте cookie <code>osu_session</code> — загрузка
-                  пойдёт напрямую с osu!</span
-                >
-              </li>
-            </ol>
-            <div class="notice">
-              <strong>Без входа в аккаунт</strong>
-              <p>
-                По умолчанию ничего вводить не нужно: зеркала отдают готовые наборы анонимно. Cookie остаётся запасным
-                вариантом для редких наборов.
-              </p>
-            </div>
-          </section>
-          <section class="card">
-            <h2>Подсказка</h2>
-            <p class="hint example-link-hint">Пример ссылки:</p>
-            <p class="example-link">
-              <a href="https://osucollector.com/collections/23905/stream-180-189" target="_blank" rel="noreferrer"
-                >osucollector.com/collections/23905/stream-180-189</a
-              >
-            </p>
-            <p class="small">
-              Каждый <code>.osz</code> содержит набор со всеми его сложностями. Повторные скачивания уже имеющихся
-              файлов пропускаются.
-            </p>
+            <details class="extra-methods-details guidance-details">
+              <summary class="extra-methods-summary">
+                <span>Как работает загрузка и что важно знать</span>
+                <span class="chevron" aria-hidden="true">⌄</span>
+              </summary>
+              <div class="guidance-content">
+                <div class="notice">
+                  <strong>Зеркала — сторонние сервисы</strong>
+                  <p>Если набор не найден, приложение пробует следующее зеркало. Если ни одно не помогло, можно переключиться на резервный способ.</p>
+                </div>
+                <div class="notice">
+                  <strong>Использование сессии</strong>
+                  <p>Загрузка с аккаунтом выполняется не через официальный клиент. Массовая автоматическая загрузка в обход osu! может привести к ограничению аккаунта или IP — используйте этот способ умеренно и на свой риск.</p>
+                </div>
+              </div>
+            </details>
           </section>
         </aside>
       </div>
-      <footer>Работает локально на вашем компьютере · Node.js · Без дополнительных пакетов</footer>
+
+      <footer>
+        <span>osu!collector downloader</span>
+        <span class="footer-status"><i aria-hidden="true"></i> Локально · Node.js · Без дополнительных пакетов</span>
+      </footer>
     </main>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </body>

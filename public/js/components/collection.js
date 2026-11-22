@@ -382,6 +382,18 @@ export function renderMapList(maps = []) {
       const checkboxCol = document.createElement('div');
       checkboxCol.className = 'map-checkbox-col';
 
+      /** @type {{ item: HTMLElement, title: HTMLAnchorElement, creator: HTMLElement | null, metaRow: HTMLElement | null, badge: HTMLElement | null, checkbox: HTMLInputElement, currentId: number | undefined, map: any }} */
+      const record = {
+        item,
+        title: /** @type {any} */ (null),
+        creator: null,
+        metaRow: null,
+        badge: null,
+        checkbox: /** @type {any} */ (null),
+        currentId: map?.id,
+        map,
+      };
+
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'map-select-checkbox';
@@ -392,11 +404,13 @@ export function renderMapList(maps = []) {
       });
       checkbox.addEventListener('change', (e) => {
         e.stopPropagation();
+        const currentSetId = Number(record.currentId || map?.id);
+        if (!currentSetId) return;
         if (checkbox.checked) {
-          selectedSetIds.add(numId);
+          selectedSetIds.add(currentSetId);
           item.classList.remove('is-unselected');
         } else {
-          selectedSetIds.delete(numId);
+          selectedSetIds.delete(currentSetId);
           item.classList.add('is-unselected');
         }
         updateSelectionSummary();
@@ -405,6 +419,7 @@ export function renderMapList(maps = []) {
         }
       });
       checkboxCol.append(checkbox);
+      record.checkbox = checkbox;
 
       const mainCol = document.createElement('div');
       mainCol.className = 'map-item-main';
@@ -418,15 +433,19 @@ export function renderMapList(maps = []) {
       title.addEventListener('click', (e) => {
         e.stopPropagation();
       });
+      record.title = title;
 
       const metaRow = document.createElement('div');
       metaRow.className = 'map-meta-row';
       const creator = updateMetaRowContent(metaRow, map);
+      record.metaRow = metaRow;
+      record.creator = creator;
 
       mainCol.append(title, metaRow);
 
       const badge = document.createElement('span');
       updateMapBadge(badge, map?.id);
+      record.badge = badge;
 
       inner.append(checkboxCol, mainCol, badge);
       item.append(inner);
@@ -434,8 +453,12 @@ export function renderMapList(maps = []) {
       item.addEventListener('click', (e) => {
         const target = /** @type {HTMLElement} */ (e.target);
         if (target?.closest?.('.map-select-checkbox') || target?.closest?.('a')) return;
-        if (numId && typeof window !== 'undefined' && window.open) {
-          window.open(`https://osu.ppy.sh/beatmapsets/${numId}`, '_blank', 'noopener,noreferrer');
+        const currentSetId = Number(record.currentId || map?.id);
+        const targetHref = title.href && title.href !== '#'
+          ? title.href
+          : (currentSetId ? `https://osu.ppy.sh/beatmapsets/${currentSetId}` : null);
+        if (targetHref && typeof window !== 'undefined' && window.open) {
+          window.open(targetHref, '_blank', 'noopener,noreferrer');
         }
       });
 
@@ -443,7 +466,6 @@ export function renderMapList(maps = []) {
       const matchesStatus = matchesStatusFilter(numId, currentStatusFilter);
       item.hidden = !(matchesSearch && matchesStatus);
 
-      const record = { item, title, creator, metaRow, badge, checkbox, currentId: map?.id, map };
       mapListByIndex[i] = record;
       if (map?.id) {
         mapElementsById.set(map.id, record);

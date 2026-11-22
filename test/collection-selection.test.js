@@ -421,6 +421,30 @@ describe('Выбор подмножества карт, поиск и фильт
       assert.equal(record.title.rel, 'noopener noreferrer');
     });
 
+    it('updateMapListLabels синхронизирует ссылку и текущий setId при перестановке/обогащении', () => {
+      const mockData = {
+        id: 5555,
+        count: 2,
+        setIds: [101, 102],
+        maps: [
+          { id: 101, label: 'Набор 101' },
+          { id: 102, label: 'Набор 102' },
+        ],
+      };
+      collectionModule.renderCollection(mockData);
+
+      // Имитируем ленивую подгрузку, где на первое место встаёт набор 777
+      const enrichedMaps = [
+        { id: 777, title: 'Enriched Song', artist: 'Artist', label: 'Artist — Enriched Song' },
+      ];
+      collectionModule.updateMapListLabels(enrichedMaps, 0);
+
+      const record = collectionModule.mapListByIndex[0];
+      assert.equal(record.currentId, 777);
+      assert.equal(record.title.href, 'https://osu.ppy.sh/beatmapsets/777');
+      assert.equal(record.title.textContent, 'Artist — Enriched Song');
+    });
+
     it('updateDownloadButton меняет текст и состояние в зависимости от количества выбранных', () => {
       const btn = /** @type {any} */ (global.document.getElementById('download-button'));
       const coll = { id: 555, count: 4, setIds: [1, 2, 3, 4] };
