@@ -6,10 +6,15 @@ let collection = null;
 /** @type {Set<number>} */
 let selectedSetIds = new Set();
 let currentSearchFilter = '';
+let currentStatusFilter = 'all';
 let uiCallbacks = /** @type {{ updateDownloadButton?: () => void } | null} */ (null);
 
 export function getCollection() {
   return collection;
+}
+
+export function getStatusFilter() {
+  return currentStatusFilter;
 }
 
 /**
@@ -51,17 +56,21 @@ export function setCollection(c) {
     if (!collection.downloadedSet && Array.isArray(collection.downloadedSetIds)) {
       collection.downloadedSet = new Set(collection.downloadedSetIds.map(Number));
     }
-    if (Array.isArray(collection.setIds)) {
-      selectedSetIds = new Set(collection.setIds.map(Number));
-    } else if (Array.isArray(collection.maps)) {
-      selectedSetIds = new Set(collection.maps.map((m) => Number(m.id)));
-    }
+    const allIds = Array.isArray(collection.setIds)
+      ? collection.setIds.map(Number)
+      : Array.isArray(collection.maps)
+        ? collection.maps.map((m) => Number(m.id))
+        : [];
+    const newIds = allIds.filter(
+      (id) => !collection.installedSet?.has(id) && !collection.downloadedSet?.has(id),
+    );
+    selectedSetIds = new Set(newIds);
   }
 }
 
 let mapListRenderId = 0;
 export const mapElementsById = new Map();
-/** @type {Array<{ item: HTMLElement, title: HTMLElement, creator: HTMLElement | null, badge: HTMLElement | null, checkbox?: HTMLInputElement | null, currentId: number | undefined, map?: any }>} */
+/** @type {Array<{ item: HTMLElement, title: HTMLElement, creator: HTMLElement | null, metaRow?: HTMLElement | null, badge: HTMLElement | null, checkbox?: HTMLInputElement | null, currentId: number | undefined, map?: any }>} */
 export let mapListByIndex = [];
 let metadataPollTimer = null;
 let metadataPollInFlight = false;
@@ -177,22 +186,86 @@ export function updateSelectionSummary() {
 }
 
 /**
- * Применяет строку поиска к элементам списка карт.
- * @param {string} [query='']
+ * Проверяет соответствие набора статусному фильтру ('all' | 'new' | 'installed').
+ * @param {number | string | undefined} mapId
+ * @param {string} statusFilter
+ * @returns {boolean}
  */
-export function applySearchFilter(query = '') {
-  currentSearchFilter = (query || '').trim().toLowerCase();
+export function matchesStatusFilter(mapId, statusFilter) {
+  if (!statusFilter || statusFilter === 'all') return true;
+  if (!mapId) return true;
+  const numId = Number(mapId);
+  const isInstalled = collection?.installedSet
+    ? collection.installedSet.has(numId)
+    : collection?.installedSetIds?.includes(numId);
+  if (statusFilter === 'installed') return Boolean(isInstalled);
+  if (statusFilter === 'new') return !isInstalled;
+  return true;
+}
+
+/**
+ * Применяет активный поисковый и статусный фильтры ко всем элементам списка.
+ */
+export function applyCombinedFilters() {
   for (const record of mapListByIndex) {
     if (!record || !record.item) continue;
-    const matches = matchesFilter(
+    const matchesSearch = matchesFilter(
       record.map,
       record.title?.textContent,
       record.creator?.textContent,
       currentSearchFilter,
     );
-    record.item.hidden = !matches;
+    const matchesStatus = matchesStatusFilter(record.currentId, currentStatusFilter);
+    record.item.hidden = !(matchesSearch && matchesStatus);
   }
   updateSelectionSummary();
+}
+
+/**
+ * Применяет строку поиска к элементам списка карт.
+ * @param {string} [query='']
+ */
+export function applySearchFilter(query = '') {
+  currentSearchFilter = (query || '').trim().toLowerCase();
+  applyCombinedFilters();
+}
+
+/**
+ * Переключает активный статусный фильтр карт ('all' | 'new' | 'installed').
+ * @param {string} filter
+ */
+export function setStatusFilter(filter) {
+  currentStatusFilter = filter || 'all';
+  if (typeof document !== 'undefined' && document.querySelectorAll) {
+    const tabs = document.querySelectorAll('.filter-tab');
+    tabs.forEach((tab) => {
+      const isCurrent = tab.getAttribute('data-filter') === currentStatusFilter;
+      tab.classList.toggle('active', isCurrent);
+      tab.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+    });
+  }
+  applyCombinedFilters();
+}
+
+/**
+ * Обновляет счётчики на вкладках фильтра статуса (Все, Новые, В игре).
+ */
+export function updateTabCounts() {
+  const allCount = collection?.count || collection?.setIds?.length || 0;
+  let installedCount = 0;
+  if (collection?.installedSet) {
+    installedCount = collection.installedSet.size;
+  } else if (Array.isArray(collection?.installedSetIds)) {
+    installedCount = collection.installedSetIds.length;
+  }
+  const newCount = Math.max(0, allCount - installedCount);
+
+  const countAll = byId('tab-count-all');
+  const countNew = byId('tab-count-new');
+  const countInstalled = byId('tab-count-installed');
+  if (countAll) countAll.textContent = String(allCount);
+  if (countNew) countNew.textContent = String(newCount);
+  if (countInstalled) countInstalled.textContent = String(installedCount);
 }
 
 /**
@@ -228,6 +301,55 @@ export function selectVisible(select = true) {
 }
 
 /**
+ * Заполняет мета-строку карты (маппер • BPM • Stars★).
+ * @param {HTMLElement | null | undefined} container
+ * @param {any} map
+ * @returns {HTMLElement | null} ссылка на элемент автора (creator)
+ */
+export function updateMetaRowContent(container, map) {
+  if (!container) return null;
+  container.replaceChildren();
+  if (!map) return null;
+
+  let creatorEl = null;
+  if (map.creator) {
+    creatorEl = document.createElement('span');
+    creatorEl.className = 'map-creator';
+    creatorEl.textContent = `маппер: ${map.creator}`;
+    container.append(creatorEl);
+  }
+
+  if (map.bpm != null) {
+    if (container.children && container.children.length > 0) {
+      const dot = document.createElement('span');
+      dot.className = 'map-meta-dot';
+      dot.textContent = '•';
+      container.append(dot);
+    }
+    const bpmSpan = document.createElement('span');
+    bpmSpan.className = 'map-bpm';
+    bpmSpan.textContent = `${map.bpm} BPM`;
+    container.append(bpmSpan);
+  }
+
+  if (map.stars != null) {
+    if (container.children && container.children.length > 0) {
+      const dot = document.createElement('span');
+      dot.className = 'map-meta-dot';
+      dot.textContent = '•';
+      container.append(dot);
+    }
+    const starsSpan = document.createElement('span');
+    starsSpan.className = 'map-stars';
+    const starsNum = Number(map.stars);
+    starsSpan.textContent = `${starsNum.toFixed(2).replace(/\.00$/, '')}★`;
+    container.append(starsSpan);
+  }
+
+  return creatorEl;
+}
+
+/**
  * @param {any[]} [maps=[]]
  */
 export function renderMapList(maps = []) {
@@ -254,14 +376,20 @@ export function renderMapList(maps = []) {
       const item = document.createElement('li');
       item.className = 'map-id map-item' + (isPending ? ' is-pending' : '') + (!isSelected ? ' is-unselected' : '');
 
-      const label = document.createElement('label');
-      label.className = 'map-item-inner';
+      const inner = document.createElement('div');
+      inner.className = 'map-item-inner';
+
+      const checkboxCol = document.createElement('div');
+      checkboxCol.className = 'map-checkbox-col';
 
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'map-select-checkbox';
       checkbox.checked = isSelected;
       checkbox.setAttribute('aria-label', `Выбрать набор ${map?.id ?? ''}`);
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
       checkbox.addEventListener('change', (e) => {
         e.stopPropagation();
         if (checkbox.checked) {
@@ -276,35 +404,46 @@ export function renderMapList(maps = []) {
           uiCallbacks.updateDownloadButton();
         }
       });
+      checkboxCol.append(checkbox);
 
-      const content = document.createElement('div');
-      content.className = 'map-item-content';
+      const mainCol = document.createElement('div');
+      mainCol.className = 'map-item-main';
 
-      const head = document.createElement('div');
-      head.className = 'map-item-head';
-      const title = document.createElement('span');
+      const title = document.createElement('a');
       title.className = 'map-title';
+      title.href = numId ? `https://osu.ppy.sh/beatmapsets/${numId}` : '#';
+      title.target = '_blank';
+      title.rel = 'noopener noreferrer';
       title.textContent = isPending ? `Набор ${map?.id ?? ''}` : map?.label || `Набор ${map?.id ?? ''}`;
-      head.append(title);
+      title.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+
+      const metaRow = document.createElement('div');
+      metaRow.className = 'map-meta-row';
+      const creator = updateMetaRowContent(metaRow, map);
+
+      mainCol.append(title, metaRow);
+
       const badge = document.createElement('span');
       updateMapBadge(badge, map?.id);
-      head.append(badge);
-      content.append(head);
-      let creator = null;
-      if (map?.creator) {
-        creator = document.createElement('span');
-        creator.className = 'map-creator';
-        creator.textContent = `маппер: ${map.creator}`;
-        content.append(creator);
-      }
-      label.append(checkbox, content);
-      item.append(label);
 
-      if (currentSearchFilter) {
-        item.hidden = !matchesFilter(map, title.textContent, creator?.textContent, currentSearchFilter);
-      }
+      inner.append(checkboxCol, mainCol, badge);
+      item.append(inner);
 
-      const record = { item, title, creator, badge, checkbox, currentId: map?.id, map };
+      item.addEventListener('click', (e) => {
+        const target = /** @type {HTMLElement} */ (e.target);
+        if (target?.closest?.('.map-select-checkbox') || target?.closest?.('a')) return;
+        if (numId && typeof window !== 'undefined' && window.open) {
+          window.open(`https://osu.ppy.sh/beatmapsets/${numId}`, '_blank', 'noopener,noreferrer');
+        }
+      });
+
+      const matchesSearch = matchesFilter(map, title.textContent, creator?.textContent, currentSearchFilter);
+      const matchesStatus = matchesStatusFilter(numId, currentStatusFilter);
+      item.hidden = !(matchesSearch && matchesStatus);
+
+      const record = { item, title, creator, metaRow, badge, checkbox, currentId: map?.id, map };
       mapListByIndex[i] = record;
       if (map?.id) {
         mapElementsById.set(map.id, record);
@@ -360,10 +499,16 @@ export function updateMapListLabels(maps = [], offset = 0) {
     if (elements.title.textContent !== expectedLabel) {
       elements.title.textContent = expectedLabel;
     }
+    if ('href' in elements.title && map.id) {
+      // @ts-ignore
+      elements.title.href = `https://osu.ppy.sh/beatmapsets/${map.id}`;
+    }
     if (elements.badge) {
       updateMapBadge(elements.badge, map.id);
     }
-    if (map.creator) {
+    if (elements.metaRow) {
+      elements.creator = updateMetaRowContent(elements.metaRow, map);
+    } else if (map.creator) {
       const creatorText = `маппер: ${map.creator}`;
       if (elements.creator) {
         if (elements.creator.textContent !== creatorText) {
@@ -373,8 +518,7 @@ export function updateMapListLabels(maps = [], offset = 0) {
         const creator = document.createElement('span');
         creator.className = 'map-creator';
         creator.textContent = creatorText;
-        const content = elements.item.querySelector('.map-item-content') || elements.item;
-        content.append(creator);
+        elements.item.append(creator);
         elements.creator = creator;
       }
     } else if (elements.creator) {
@@ -382,14 +526,14 @@ export function updateMapListLabels(maps = [], offset = 0) {
       elements.creator = null;
     }
 
-    if (currentSearchFilter) {
-      elements.item.hidden = !matchesFilter(
-        map,
-        elements.title?.textContent,
-        elements.creator?.textContent,
-        currentSearchFilter,
-      );
-    }
+    const matchesSearch = matchesFilter(
+      map,
+      elements.title?.textContent,
+      elements.creator?.textContent,
+      currentSearchFilter,
+    );
+    const matchesStatus = matchesStatusFilter(elements.currentId, currentStatusFilter);
+    elements.item.hidden = !(matchesSearch && matchesStatus);
   }
   updateSelectionSummary();
 }
@@ -566,7 +710,10 @@ export function renderCollection(data, callbacks = {}) {
     : Array.isArray(data.maps)
       ? data.maps.map((m) => Number(m.id))
       : [];
-  selectedSetIds = new Set(initialSetIds);
+  const newSetIds = initialSetIds.filter(
+    (id) => !collection.installedSet.has(id) && !collection.downloadedSet.has(id),
+  );
+  selectedSetIds = new Set(newSetIds);
 
   const collectionName = byId('collection-name');
   if (collectionName) collectionName.textContent = data.name;
@@ -598,6 +745,16 @@ export function renderCollection(data, callbacks = {}) {
     collectionMeta?.append(chip);
   }
   updateMetadataBadge(data);
+  updateTabCounts();
+  currentStatusFilter = 'all';
+  if (typeof document !== 'undefined' && document.querySelectorAll) {
+    const tabs = document.querySelectorAll('.filter-tab');
+    tabs.forEach((tab) => {
+      const isCurrent = tab.getAttribute('data-filter') === 'all';
+      tab.classList.toggle('active', isCurrent);
+      tab.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+    });
+  }
 
   renderMapList(data.maps || (data.setIds || []).map((id) => ({ id })));
   updateSelectionSummary();
@@ -680,6 +837,16 @@ export function initCollectionUi(callbacks = {}) {
   deselectAllBtn?.addEventListener('click', () => {
     selectVisible(false);
   });
+
+  if (typeof document !== 'undefined' && document.querySelectorAll) {
+    const tabs = document.querySelectorAll('.filter-tab');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const filter = tab.getAttribute('data-filter') || 'all';
+        setStatusFilter(filter);
+      });
+    });
+  }
 
   collectionForm?.addEventListener('submit', async (event) => {
     event.preventDefault();

@@ -92,7 +92,14 @@ export function updateDownloadButton(coll, connected) {
       if (totalCount > 0 && selectedCount === 0) {
         downloadButton.textContent = 'Выберите наборы для загрузки';
       } else if (selectedCount > 0 && selectedCount < totalCount) {
-        downloadButton.textContent = `Скачать выбранные (${selectedCount})`;
+        const installedCount = currentColl?.installedSetIds?.length || 0;
+        const downloadedCount = currentColl?.downloadedSetIds?.length || 0;
+        const newCount = Math.max(0, totalCount - installedCount - downloadedCount);
+        if (selectedCount === newCount && (installedCount > 0 || downloadedCount > 0)) {
+          downloadButton.textContent = `Скачать ${selectedCount} новых`;
+        } else {
+          downloadButton.textContent = `Скачать выбранные (${selectedCount})`;
+        }
       } else {
         downloadButton.textContent = 'Скачать наборы';
       }

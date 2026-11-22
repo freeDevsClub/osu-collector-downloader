@@ -228,6 +228,37 @@ describe('Выбор подмножества карт, поиск и фильт
       assert.deepEqual(payload.selectedSetIds, [1001, 1002, 1003]);
     });
 
+    it('renderCollection автоматически снимает выбор с уже установленных и скачанных карт', () => {
+      const mockData = {
+        id: 778,
+        name: 'Auto Uncheck Test',
+        count: 4,
+        setIds: [101, 102, 103, 104],
+        installedSetIds: [102],
+        downloadedSetIds: [104],
+        maps: [
+          { id: 101, title: 'New 1' },
+          { id: 102, title: 'Installed' },
+          { id: 103, title: 'New 2' },
+          { id: 104, title: 'Downloaded' },
+        ],
+      };
+
+      collectionModule.renderCollection(mockData);
+
+      const selected = collectionModule.getSelectedSetIds();
+      // Только новые (101 и 103) должны быть выбраны
+      assert.deepEqual(selected.sort(), [101, 103]);
+
+      const counter = global.document.getElementById('selection-counter');
+      assert.equal(counter.textContent, 'Выбрано: 2 из 4');
+
+      // Кнопка скачивания должна предлагать "Скачать 2 новых"
+      const btn = /** @type {any} */ (global.document.getElementById('download-button'));
+      downloadsModule.updateDownloadButton(mockData, true);
+      assert.equal(btn.textContent, 'Скачать 2 новых');
+    });
+
     it('selectVisible(false) и selectVisible(true) переключают выбор наборов', () => {
       const mockData = {
         id: 888,
@@ -299,6 +330,95 @@ describe('Выбор подмножества карт, поиск и фильт
       collectionModule.applySearchFilter('');
       assert.equal(collectionModule.mapListByIndex[0].item.hidden, false);
       assert.equal(collectionModule.mapListByIndex[1].item.hidden, false);
+    });
+
+    it('matchesStatusFilter и setStatusFilter фильтруют карты по статусу (Все, Новые, В игре)', () => {
+      const mockData = {
+        id: 2222,
+        name: 'Status Filter Collection',
+        count: 3,
+        setIds: [5001, 5002, 5003],
+        installedSetIds: [5002],
+        maps: [
+          { id: 5001, title: 'Map New 1', artist: 'A1', creator: 'M1', label: 'A1 — Map New 1', bpm: 180, stars: 5.5 },
+          { id: 5002, title: 'Map Installed', artist: 'A2', creator: 'M2', label: 'A2 — Map Installed', bpm: 190, stars: 6.2 },
+          { id: 5003, title: 'Map New 2', artist: 'A3', creator: 'M3', label: 'A3 — Map New 2', bpm: 200, stars: 7.1 },
+        ],
+      };
+
+      collectionModule.renderCollection(mockData);
+
+      // Проверяем matchesStatusFilter напрямую
+      assert.equal(collectionModule.matchesStatusFilter(5001, 'all'), true);
+      assert.equal(collectionModule.matchesStatusFilter(5001, 'new'), true);
+      assert.equal(collectionModule.matchesStatusFilter(5001, 'installed'), false);
+
+      assert.equal(collectionModule.matchesStatusFilter(5002, 'all'), true);
+      assert.equal(collectionModule.matchesStatusFilter(5002, 'new'), false);
+      assert.equal(collectionModule.matchesStatusFilter(5002, 'installed'), true);
+
+      // Фильтр 'new' скрывает установленные (5002)
+      collectionModule.setStatusFilter('new');
+      assert.equal(collectionModule.mapListByIndex[0].item.hidden, false);
+      assert.equal(collectionModule.mapListByIndex[1].item.hidden, true);
+      assert.equal(collectionModule.mapListByIndex[2].item.hidden, false);
+
+      // Фильтр 'installed' оставляет только 5002
+      collectionModule.setStatusFilter('installed');
+      assert.equal(collectionModule.mapListByIndex[0].item.hidden, true);
+      assert.equal(collectionModule.mapListByIndex[1].item.hidden, false);
+      assert.equal(collectionModule.mapListByIndex[2].item.hidden, true);
+
+      // Сброс на 'all'
+      collectionModule.setStatusFilter('all');
+      assert.equal(collectionModule.mapListByIndex[0].item.hidden, false);
+      assert.equal(collectionModule.mapListByIndex[1].item.hidden, false);
+      assert.equal(collectionModule.mapListByIndex[2].item.hidden, false);
+    });
+
+    it('updateTabCounts вычисляет количество карт для вкладок Все, Новые, В игре', () => {
+      const mockData = {
+        id: 3333,
+        name: 'Counts Test',
+        count: 5,
+        setIds: [1, 2, 3, 4, 5],
+        installedSetIds: [2, 4],
+      };
+      collectionModule.setCollection(mockData);
+      collectionModule.updateTabCounts();
+
+      assert.equal(global.document.getElementById('tab-count-all').textContent, '5');
+      assert.equal(global.document.getElementById('tab-count-new').textContent, '3');
+      assert.equal(global.document.getElementById('tab-count-installed').textContent, '2');
+    });
+
+    it('updateMetaRowContent корректно выводит маппера, BPM и звёзды', () => {
+      const container = global.document.createElement('div');
+      const map = { creator: 'GoldenWolf', bpm: 185, stars: 6.42 };
+      const creatorEl = collectionModule.updateMetaRowContent(container, map);
+
+      assert.ok(creatorEl);
+      assert.equal(creatorEl.textContent, 'маппер: GoldenWolf');
+      const texts = Array.from(container.children).map((c) => c.textContent);
+      assert.ok(texts.includes('маппер: GoldenWolf'));
+      assert.ok(texts.includes('185 BPM'));
+      assert.ok(texts.includes('6.42★'));
+      assert.ok(texts.includes('•'));
+    });
+
+    it('renderMapList создаёт ссылку на osu.ppy.sh с target="_blank"', () => {
+      const mockData = {
+        id: 4444,
+        count: 1,
+        setIds: [99999],
+        maps: [{ id: 99999, title: 'Target Test', artist: 'Artist', creator: 'Mapper', label: 'Artist — Target Test' }],
+      };
+      collectionModule.renderCollection(mockData);
+
+      const record = collectionModule.mapListByIndex[0];
+      assert.equal(record.title.href, 'https://osu.ppy.sh/beatmapsets/99999');
+      assert.equal(record.title.target, '_blank');
+      assert.equal(record.title.rel, 'noopener noreferrer');
     });
 
     it('updateDownloadButton меняет текст и состояние в зависимости от количества выбранных', () => {

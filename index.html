@@ -75,6 +75,20 @@
                     <button type="button" id="deselect-all-btn" class="btn-link">Снять все</button>
                   </div>
                 </div>
+                <div class="collection-filter-tabs">
+                  <div class="filter-tabs-group" role="tablist" aria-label="Фильтр по статусу карт">
+                    <button type="button" class="filter-tab active" id="tab-filter-all" data-filter="all" role="tab" aria-selected="true">
+                      Все <span id="tab-count-all" class="tab-count"></span>
+                    </button>
+                    <button type="button" class="filter-tab" id="tab-filter-new" data-filter="new" role="tab" aria-selected="false">
+                      Новые <span id="tab-count-new" class="tab-count"></span>
+                    </button>
+                    <button type="button" class="filter-tab" id="tab-filter-installed" data-filter="installed" role="tab" aria-selected="false">
+                      В игре <span id="tab-count-installed" class="tab-count"></span>
+                    </button>
+                  </div>
+                  <span class="collection-preview-hint">Нажмите на карту для предпросмотра на osu.ppy.sh</span>
+                </div>
               </div>
               <ul id="map-list" class="map-list" aria-label="Список наборов карт"></ul>
             </div>
