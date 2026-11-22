@@ -16,7 +16,7 @@
           <h1>osu!Collector Downloader</h1>
           <p>Загружайте коллекции карт на свой компьютер</p>
         </div>
-        <div class="badge" aria-label="Только на этом компьютере">
+        <div class="badge" role="note" aria-label="Только на этом компьютере">
           <span class="badge-text">Только на этом компьютере</span>
         </div>
       </header>
@@ -92,9 +92,9 @@
               </label>
             </div>
 
-            <div class="field mt-14">
-              <label>Что делать со скачанными картами:</label>
-              <div class="method-row" role="radiogroup" aria-label="Действие со скачанными картами">
+            <fieldset class="field mt-14 post-download-fieldset" role="radiogroup" aria-labelledby="post-download-legend">
+              <legend id="post-download-legend">Что делать со скачанными картами:</legend>
+              <div class="method-row">
                 <label class="method-option" id="option-action-extract">
                   <input type="radio" name="post-download-action" value="extract" id="action-extract" />
                   <span>Распаковывать в Songs<small>создаёт папку карты прямо в игре</small></span>
@@ -121,7 +121,7 @@
                   </label>
                 </div>
               </details>
-            </div>
+            </fieldset>
           </section>
 
           <section class="card">
