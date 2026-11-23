@@ -265,6 +265,86 @@ describe('Устранение дублирования воркеров ска�
         downloader.downloadSet = originalDownloadSet;
       }
     });
+
+    it('BUG-002: ограничивает цикл проверки кандидатов и предотвращает бесконечный цикл при некорректном итераторе', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'worker-infinite-test-'));
+      const oldDownloadsDir = process.env.DOWNLOADS_DIR;
+      process.env.DOWNLOADS_DIR = tempDir;
+
+      try {
+        // Создаем валидный zip-файл для 999999, чтобы checkAndSkipIfAvailable всегда возвращал true (skip)
+        const validZipBuffer = Buffer.from([
+          0x50, 0x4b, 0x03, 0x04, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x50,
+          0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]);
+        await fs.writeFile(path.join(tempDir, '999999.osz'), validZipBuffer);
+
+        const job = createJob({
+          id: 'job_test_infinite_iterator',
+          collectionId: 'c1',
+          collectionName: 'Test',
+          method: 'mirror',
+          status: 'running',
+          setIds: [6001, 6002],
+        });
+        const stopContext = { stopAfterCurrent: false, stopForCooldown: false, stopForNoSpace: false };
+        let callCount = 0;
+        // Некорректный итератор, который никогда не возвращает null
+        const faultyGetNextSetId = () => {
+          callCount++;
+          return 999999;
+        };
+
+        await runDownloadPool({
+          job,
+          auth: { kind: 'custom' },
+          getNextSetId: faultyGetNextSetId,
+          concurrency: 1,
+          stopContext,
+        });
+
+        // Цикл должен прерваться по guard-счетчику (job.setIds.length + 1 = 3), не зависая бесконечно
+        assert.ok(
+          callCount <= job.setIds.length + 1,
+          `callCount (${callCount}) должен быть <= ${job.setIds.length + 1}`,
+        );
+        assert.equal(callCount, 3);
+      } finally {
+        if (oldDownloadsDir !== undefined) process.env.DOWNLOADS_DIR = oldDownloadsDir;
+        else delete process.env.DOWNLOADS_DIR;
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+
+    it('BUG-002: немедленно прерывает поиск кандидатов во внутреннем цикле при сигнале отмены', async () => {
+      const ac = new AbortController();
+      const job = createJob({
+        id: 'job_test_abort_candidate_search',
+        collectionId: 'c1',
+        collectionName: 'Test',
+        method: 'mirror',
+        status: 'running',
+        setIds: [7001, 7002, 7003, 7004, 7005],
+        abortController: ac,
+      });
+      const stopContext = { stopAfterCurrent: false, stopForCooldown: false, stopForNoSpace: false };
+      let callCount = 0;
+      const getNextSetId = () => {
+        callCount++;
+        ac.abort();
+        return 7000 + callCount;
+      };
+
+      await runDownloadPool({
+        job,
+        auth: { kind: 'custom' },
+        getNextSetId,
+        concurrency: 1,
+        stopContext,
+      });
+
+      assert.equal(callCount, 1);
+    });
   });
 
   describe('finalizeJobStatus', () => {

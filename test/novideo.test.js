@@ -67,6 +67,15 @@ describe('Режим скачивания «Без видео» (No Video)', () 
     );
   });
 
+  it('BUG-001: buildMirrorUrl и appendNoVideo не дублируют параметр ?noVideo=1', () => {
+    assert.equal(
+      buildMirrorUrl('https://osu.direct/d/{id}?noVideo=1', 123, { noVideo: true }),
+      'https://osu.direct/d/123?noVideo=1',
+    );
+    assert.equal(appendNoVideo('https://osu.direct/d/123?noVideo=1'), 'https://osu.direct/d/123?noVideo=1');
+    assert.equal(appendNoVideo('not-a-valid-url/d/123?noVideo=1'), 'not-a-valid-url/d/123?noVideo=1');
+  });
+
   it('DEFAULT_MIRRORS поддерживают noVideo', () => {
     for (const mirror of DEFAULT_MIRRORS) {
       const normalUrl = mirror.build(12345);
@@ -100,6 +109,11 @@ describe('Режим скачивания «Без видео» (No Video)', () 
     await downloadSet(88001, { kind: 'mirror', mirror: testMirror }, jobNoVideo);
     assert.equal(requestedUrls.length, 1);
     assert.ok(requestedUrls[0].includes('noVideo=1'), `Ожидался noVideo=1 в URL, получено: ${requestedUrls[0]}`);
+    assert.equal(
+      requestedUrls[0].match(/noVideo=1/g)?.length,
+      1,
+      `Параметр noVideo=1 не должен дублироваться в URL: ${requestedUrls[0]}`,
+    );
 
     requestedUrls = [];
     const jobWithVideo = createTestJob({
