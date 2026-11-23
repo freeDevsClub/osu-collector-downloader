@@ -18,6 +18,7 @@ const {
   setApiTokenRequired,
   isInitialCookieGranted,
   setInitialCookieGranted,
+  setServerStartedAt,
   safeCompareTokens,
   ensureLocalRequest,
 } = require('./lib/security.js');
@@ -95,6 +96,7 @@ const server = http.createServer(async (req, res) => {
               Location: '/',
               'Set-Cookie': `${localApiTokenCookie}=${getApiToken()}; ${cookieOptions(req, 60 * 60 * 24)}`,
               'Cache-Control': 'no-store',
+              'Referrer-Policy': 'no-referrer',
             });
             return res.end();
           }
@@ -239,8 +241,11 @@ async function startServer(port = PORT, host = HOST, options = {}) {
     server.once('error', onError);
     server.listen(port, host, () => {
       server.off('error', onError);
+      setServerStartedAt();
+      process.stderr.write(`\n  Откройте в браузере: http://${host}:${port}/?token=${getApiToken()}\n\n`);
       log('info', 'server.started', {
-        url: `http://${host}:${port}/?token=${getApiToken()}`,
+        host,
+        port,
         node: process.version,
         downloadsDirectory: getDownloadsDir(),
         dataDirectory: getDataDir(),

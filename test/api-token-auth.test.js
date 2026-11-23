@@ -14,6 +14,8 @@ const {
   setApiTokenRequired,
   isInitialCookieGranted,
   setInitialCookieGranted,
+  INITIAL_COOKIE_WINDOW_MS,
+  setServerStartedAt,
   safeCompareTokens,
   extractTokenFromRequest,
   verifyApiToken,
@@ -221,6 +223,7 @@ describe('Аутентификация локального API через се�
       assert.match(setCookie, /HttpOnly/i);
       assert.match(setCookie, /SameSite=Strict/i);
       assert.match(setCookie, /Path=\//i);
+      assert.equal(res.headers['referrer-policy'], 'no-referrer');
     });
 
     it('GET /?token=<invalid> отклоняется с кодом 403 Forbidden', async () => {
@@ -236,6 +239,7 @@ describe('Аутентификация локального API через се�
       assert.equal(res.status, 302);
       assert.equal(res.headers.location, '/');
       assert.match(String(res.headers['set-cookie'] || ''), new RegExp(`${localApiTokenCookie}=${token}`));
+      assert.equal(res.headers['referrer-policy'], 'no-referrer');
     });
 
     it('GET / при первом запуске (initialCookieGranted=false) выдаёт одноразовую cookie легитимному клиенту', async () => {
@@ -251,6 +255,15 @@ describe('Аутентификация локального API через се�
 
     it('GET / при повторном обращении без cookie не выдаёт токен повторно посторонним процессам', async () => {
       setInitialCookieGranted(true);
+      const res = await request('GET', '/');
+      assert.equal(res.status, 200);
+      assert.equal(res.headers['set-cookie'], undefined);
+    });
+
+    it('GET / по истечении временного окна (INITIAL_COOKIE_WINDOW_MS) блокирует выдачу cookie даже если initialCookieGranted=false', async () => {
+      setInitialCookieGranted(false);
+      setServerStartedAt(Date.now() - (INITIAL_COOKIE_WINDOW_MS + 1000));
+      assert.equal(isInitialCookieGranted(), true);
       const res = await request('GET', '/');
       assert.equal(res.status, 200);
       assert.equal(res.headers['set-cookie'], undefined);
@@ -290,6 +303,19 @@ describe('Аутентификация локального API через се�
       setApiTokenRequired(false);
       const res = await request('POST', '/api/osu/settings', {}, {});
       assert.equal(res.status, 200);
+    });
+
+    it('isInitialCookieGranted учитывает временное окно INITIAL_COOKIE_WINDOW_MS', () => {
+      setInitialCookieGranted(false);
+      setServerStartedAt(Date.now());
+      assert.equal(isInitialCookieGranted(), false);
+
+      setServerStartedAt(Date.now() - (INITIAL_COOKIE_WINDOW_MS + 100));
+      assert.equal(isInitialCookieGranted(), true);
+
+      setServerStartedAt(Date.now());
+      setInitialCookieGranted(true);
+      assert.equal(isInitialCookieGranted(), true);
     });
   });
 });
