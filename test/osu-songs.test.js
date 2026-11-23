@@ -1390,5 +1390,47 @@ describe('Интеграция с локальной директорией osu!
 
       assert.equal(resolveOsuSongsDir(oszFolder), oszFolder);
     });
+
+    test('PERF-001: loadSettings не выполняет синхронный fs.readdirSync по папке Songs', async () => {
+      invalidateCachedSongs();
+      resetSettingsForTest();
+
+      await saveSettings({
+        osuPath: mockSongsDir,
+        checkExisting: true,
+        postDownloadAction: 'none',
+      });
+
+      invalidateCachedSongs();
+      resetSettingsForTest();
+
+      let readdirSyncCalled = false;
+      const originalReaddirSync = fs.readdirSync;
+      // @ts-ignore
+      fs.readdirSync = (dirPath, opts) => {
+        if (String(dirPath).includes(mockSongsDir)) {
+          readdirSyncCalled = true;
+        }
+        // @ts-ignore
+        return originalReaddirSync(dirPath, opts);
+      };
+
+      try {
+        const loaded = loadSettings();
+        assert.equal(loaded.valid, true);
+        assert.equal(loaded.songsCount, 0, 'Изначально songsCount = 0 без синхронного сканирования');
+        assert.equal(
+          readdirSyncCalled,
+          false,
+          'fs.readdirSync не должен вызываться для папки Songs при loadSettings()',
+        );
+
+        const songs = await getCachedOsuSongsAsync(loaded.songsDir);
+        assert.ok(songs.size >= 4);
+        assert.equal(getSettings().songsCount, songs.size);
+      } finally {
+        fs.readdirSync = originalReaddirSync;
+      }
+    });
   });
 });

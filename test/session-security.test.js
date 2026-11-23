@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { server } = require('../server.js');
-const { sessions, getActiveRedactionsCount } = require('../lib/security.js');
+const { sessions, getActiveRedactionsCount, cookieOptions } = require('../lib/security.js');
 const { PORT, ROOT } = require('../lib/config.js');
 const { setupIsolatedTestEnv } = require('./helpers/test-env.js');
 
@@ -204,6 +204,28 @@ describe('Безопасность сессий и cookie osu_session (/api/sess
       const delCookieHeader = resDelete.headers['set-cookie']?.[0];
       assert.ok(delCookieHeader);
       assert.match(delCookieHeader, /Max-Age=0/i);
+    });
+
+    it('QUAL-001: cookieOptions формирует параметры куки без флага Secure даже при x-forwarded-proto: https', () => {
+      const mockReq = /** @type {any} */ ({ headers: { 'x-forwarded-proto': 'https' } });
+      const opts = cookieOptions(mockReq, 3600);
+      assert.equal(opts, 'Path=/; HttpOnly; SameSite=Strict; Max-Age=3600');
+      assert.doesNotMatch(opts, /;\s*Secure/i);
+    });
+
+    it('QUAL-001: POST /api/session не выставляет флаг Secure при наличии заголовка x-forwarded-proto: https', async () => {
+      const resPost = await apiRequest(
+        'POST',
+        '/api/session',
+        { 'X-Forwarded-Proto': 'https' },
+        { session: 'session_fake_token_1234567890_abcdef' },
+      );
+      const cookieHeader = resPost.headers['set-cookie']?.[0];
+      assert.ok(cookieHeader);
+      assert.match(cookieHeader, /Path=\//);
+      assert.match(cookieHeader, /HttpOnly/i);
+      assert.match(cookieHeader, /SameSite=Strict/i);
+      assert.doesNotMatch(cookieHeader, /;\s*Secure/i);
     });
   });
 

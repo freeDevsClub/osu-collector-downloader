@@ -24,6 +24,7 @@ const {
   scheduleSaveState,
   clearSaveStateTimer,
   waitForPendingSaveState,
+  _setPendingSavePromisesForTest,
 } = require('../lib/jobs.js');
 
 const { server, bootstrapServer, resetBootstrap } = require('../server.js');
@@ -761,5 +762,34 @@ describe('Сохранение состояния очереди на диск (
     assert.notEqual(second.maps, first.maps, 'Кеш должен обновиться при поступлении названий карт');
     assert.equal(second.maps[0].title, 'Song Y');
     assert.equal(second.maps[0].artist, 'Artist X');
+  });
+
+  it('PERF-002: waitForPendingSaveState защищен от бесконечного цикла счётчиком итераций и таймаутом', async () => {
+    // 1. Сценарий когда промис завершился, но не был обнулен (цикл завершается по guard < 10)
+    const completedPromise = Promise.resolve();
+    _setPendingSavePromisesForTest(completedPromise, null);
+
+    try {
+      const start = Date.now();
+      await waitForPendingSaveState();
+      assert.ok(
+        Date.now() - start < 500,
+        'Завершённый, но необнулённый промис должен выйти по guard < 10 за доли секунды',
+      );
+    } finally {
+      _setPendingSavePromisesForTest(null, null);
+    }
+
+    // 2. Сценарий с зависшим промисом (выходит по таймауту без зависания процесса)
+    const neverResolvingPromise = new Promise(() => {});
+    _setPendingSavePromisesForTest(neverResolvingPromise, null);
+
+    try {
+      const start = Date.now();
+      await waitForPendingSaveState(10);
+      assert.ok(Date.now() - start < 500, 'Зависший промис должен выйти по таймауту');
+    } finally {
+      _setPendingSavePromisesForTest(null, null);
+    }
   });
 });
