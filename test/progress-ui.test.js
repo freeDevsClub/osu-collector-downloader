@@ -189,6 +189,23 @@ describe('Компактный UI прогресса и выпадающий с�
 
       updateJob({ ...mockJob, status: 'cancelled', completed: 15 });
       assert.equal(mockProgressLabel.textContent, 'Остановлено · 15 из 50');
+
+      // Проверяем отображение очереди для потока с waiting: true
+      updateJob({
+        ...mockJob,
+        activeTransfers: [
+          { setId: 101, setName: 'Song Waiting', mirror: 'osu.direct', bytes: 0, totalBytes: null, waiting: true },
+        ],
+      });
+      assert.equal(mockTransfersList.children.length, 1);
+      const waitingItem = mockTransfersList.children[0];
+      assert.match(waitingItem.className, /transfer-item-waiting/);
+      // head -> mirror badge
+      const mirrorEl = waitingItem.children[0].children[1];
+      assert.equal(mirrorEl.textContent, 'osu.direct (очередь)');
+      // meta -> bytesSpan
+      const metaEl = waitingItem.children[1];
+      assert.equal(metaEl.children[0].textContent, 'Ожидание очереди к зеркалу…');
     } finally {
       /** @type {any} */ (global).document = origDocument;
     }

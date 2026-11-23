@@ -907,6 +907,13 @@ a.map-title:hover {
   border-radius: 5px;
   flex-shrink: 0;
 }
+.transfer-item-mirror.waiting {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+}
+.transfer-waiting-label {
+  color: #fbbf24;
+}
 .transfer-item-meta {
   display: flex;
   justify-content: space-between;

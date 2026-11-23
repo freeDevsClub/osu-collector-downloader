@@ -352,7 +352,7 @@ export function updateJob(job) {
   const transfersChevronEl = byId('transfers-chevron');
   const transfersDetailsEl = /** @type {HTMLDetailsElement | null} */ (byId('transfers-details'));
 
-  /** @type {Array<{ setId?: number, setName?: string, mirror?: string, bytes?: number, totalBytes?: number | null, percent?: number | null }>} */
+  /** @type {Array<{ setId?: number, setName?: string, mirror?: string, bytes?: number, totalBytes?: number | null, percent?: number | null, waiting?: boolean }> } */
   const activeTransfers =
     Array.isArray(job.activeTransfers) && job.activeTransfers.length > 0
       ? job.activeTransfers
@@ -385,7 +385,7 @@ export function updateJob(job) {
       transfersListEl.replaceChildren();
       for (const t of activeTransfers) {
         const item = document.createElement('div');
-        item.className = 'transfer-item';
+        item.className = 'transfer-item' + (t.waiting ? ' transfer-item-waiting' : '');
 
         const head = document.createElement('div');
         head.className = 'transfer-item-head';
@@ -398,8 +398,8 @@ export function updateJob(job) {
 
         if (t.mirror) {
           const mirror = document.createElement('span');
-          mirror.className = 'transfer-item-mirror';
-          mirror.textContent = t.mirror;
+          mirror.className = 'transfer-item-mirror' + (t.waiting ? ' waiting' : '');
+          mirror.textContent = t.waiting ? `${t.mirror} (очередь)` : t.mirror;
           head.appendChild(mirror);
         }
         item.appendChild(head);
@@ -408,9 +408,14 @@ export function updateJob(job) {
         meta.className = 'transfer-item-meta';
 
         const bytesSpan = document.createElement('span');
-        bytesSpan.textContent = t.totalBytes
-          ? `${formatBytes(t.bytes || 0)} / ${formatBytes(t.totalBytes)}`
-          : `${formatBytes(t.bytes || 0)} загружено`;
+        if (t.waiting) {
+          bytesSpan.className = 'transfer-waiting-label';
+          bytesSpan.textContent = 'Ожидание очереди к зеркалу…';
+        } else {
+          bytesSpan.textContent = t.totalBytes
+            ? `${formatBytes(t.bytes || 0)} / ${formatBytes(t.totalBytes)}`
+            : `${formatBytes(t.bytes || 0)} загружено`;
+        }
         meta.appendChild(bytesSpan);
 
         if (t.percent !== null && t.percent !== undefined) {

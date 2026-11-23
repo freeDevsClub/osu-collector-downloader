@@ -10,6 +10,7 @@ const os = require('node:os');
 const {
   acquireMirrorSlot,
   isMirrorBusy,
+  getMirrorQueueLength,
   resetMirrorSlots,
   mirrorCooldowns,
   setMirrorsForTest,
@@ -286,5 +287,84 @@ describe('Worker Pool и per-mirror concurrency', () => {
 
     releaseM1();
     assert.equal(isMirrorBusy(MIRRORS[0]), false);
+  });
+
+  it('getMirrorQueueLength точно отражает число активных и ожидающих запросов', async () => {
+    const mirror = { id: 'test_queue_len', label: 'Queue Len Mirror' };
+    assert.equal(getMirrorQueueLength(mirror), 0);
+
+    const rel1 = await acquireMirrorSlot(mirror);
+    assert.equal(getMirrorQueueLength(mirror), 1);
+
+    /** @type {(() => void) | undefined} */
+    let rel2;
+    const p2 = acquireMirrorSlot(mirror).then((r) => {
+      rel2 = r;
+      return r;
+    });
+
+    // Даем микротаске зарегистрировать waiter
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(getMirrorQueueLength(mirror), 2);
+
+    /** @type {(() => void) | undefined} */
+    let rel3;
+    const p3 = acquireMirrorSlot(mirror).then((r) => {
+      rel3 = r;
+      return r;
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(getMirrorQueueLength(mirror), 3);
+
+    rel1();
+    await p2;
+    assert.equal(getMirrorQueueLength(mirror), 2);
+
+    if (rel2) rel2();
+    await p3;
+    assert.equal(getMirrorQueueLength(mirror), 1);
+
+    if (rel3) rel3();
+    assert.equal(getMirrorQueueLength(mirror), 0);
+  });
+
+  it('acquireMirrorSlot с timeoutMs выбрасывает MirrorTransientError при истечении времени', async () => {
+    const mirror = { id: 'test_timeout', label: 'Timeout Mirror' };
+    const rel1 = await acquireMirrorSlot(mirror);
+
+    const startTime = Date.now();
+    await assert.rejects(
+      acquireMirrorSlot(mirror, undefined, { timeoutMs: 50 }),
+      /Таймаут ожидания слота зеркала/,
+    );
+    const elapsed = Date.now() - startTime;
+    assert.ok(elapsed >= 40, `Ожидание должно было продлиться около 50 мс, фактически: ${elapsed} мс`);
+
+    // После таймаута очередь очищена
+    assert.equal(getMirrorQueueLength(mirror), 1);
+    rel1();
+    assert.equal(getMirrorQueueLength(mirror), 0);
+  });
+
+  it('safeJobForClient корректно сериализует waiting статус слотов и добавляет (в очереди) к currentMirror', () => {
+    const job = createTestJob({
+      id: 'job_waiting_status',
+      method: 'mirror',
+      collectionName: 'Waiting Test',
+      status: 'running',
+      setIds: [101, 102],
+      activeTransfers: [
+        [101, { setId: 101, setName: 'Set 101', mirror: 'osu.direct', bytes: 0, totalBytes: null, waiting: true }],
+        [102, { setId: 102, setName: 'Set 102', mirror: 'Hinamizawa', bytes: 1000, totalBytes: 5000, waiting: false }],
+      ],
+    });
+
+    const client = safeJobForClient(job);
+    assert.equal(client.activeTransfers.length, 2);
+    assert.equal(client.activeTransfers[0].waiting, true);
+    assert.equal(client.activeTransfers[1].waiting, false);
+    assert.match(client.currentMirror, /osu\.direct \(в очереди\)/);
+    assert.match(client.currentMirror, /Hinamizawa/);
   });
 });
