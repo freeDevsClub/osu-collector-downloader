@@ -8,6 +8,7 @@
     "test": "node --test",
     "check": "tsc -p jsconfig.json",
     "lint": "eslint .",
+    "audit": "npm audit --audit-level=high",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
