@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
-const { downloadFromMirrors } = require('../lib/downloader.js');
+const { downloadFromMirrors, safeDownloadFetch } = require('../lib/downloader.js');
 const {
   mirrorCooldowns,
   parseRetryAfter,
@@ -302,6 +302,115 @@ describe('Интеграционные тесты fallback между зерка
       else delete process.env.MIRROR_COOLDOWN_MAX_MS;
       if (prevWait !== undefined) process.env.MIRROR_COOLDOWN_WAIT_MAX_MS = prevWait;
       else delete process.env.MIRROR_COOLDOWN_WAIT_MAX_MS;
+    }
+  });
+
+  it('откладывает набор (deferSet = true), если часть зеркал 404, а часть вернули 5xx/таймаут', async () => {
+    const s404 = http.createServer((req, res) => {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+    });
+    const s503 = http.createServer((req, res) => {
+      res.writeHead(503, { 'Content-Type': 'text/plain' });
+      res.end('Service Unavailable');
+    });
+    await Promise.all([
+      new Promise((r) => s404.listen(0, '127.0.0.1', () => r(null))),
+      new Promise((r) => s503.listen(0, '127.0.0.1', () => r(null))),
+    ]);
+    const port404 = /** @type {import('node:net').AddressInfo} */ (s404.address()).port;
+    const port503 = /** @type {import('node:net').AddressInfo} */ (s503.address()).port;
+
+    setMirrorsForTest([
+      { id: 'm_test_503', label: 'Mirror 503', build: (id) => `http://127.0.0.1:${port503}/d/${id}` },
+      { id: 'm_test_404', label: 'Mirror 404', build: (id) => `http://127.0.0.1:${port404}/d/${id}` },
+    ]);
+
+    const job = createTestJob({
+      id: 'test_job_defer_503',
+      status: 'running',
+    });
+
+    try {
+      await assert.rejects(
+        async () => {
+          await downloadFromMirrors(99907, job);
+        },
+        (err) => {
+          const e = /** @type {any} */ (err);
+          assert.equal(e.deferSet, true, 'Ошибка должна содержать deferSet: true');
+          assert.match(e.message, /Mirror 503/);
+          assert.match(e.message, /Mirror 404/);
+          return true;
+        },
+      );
+    } finally {
+      await Promise.all([
+        new Promise((r) => s404.close(r)),
+        new Promise((r) => s503.close(r)),
+      ]);
+    }
+  });
+
+  it('включает в диагностику зеркала на кулдауне (429) и откладывает набор при частичных 404', async () => {
+    const s404 = http.createServer((req, res) => {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+    });
+    await new Promise((r) => s404.listen(0, '127.0.0.1', () => r(null)));
+    const port404 = /** @type {import('node:net').AddressInfo} */ (s404.address()).port;
+
+    setMirrorsForTest([
+      { id: 'm_cd_429', label: 'Mirror Cooldown', build: (id) => `http://127.0.0.1:${port404}/d/${id}` },
+      { id: 'm_only_404', label: 'Mirror 404 Only', build: (id) => `http://127.0.0.1:${port404}/d/${id}` },
+    ]);
+    mirrorCooldowns.set('m_cd_429', Date.now() + 5000);
+
+    const job = createTestJob({
+      id: 'test_job_defer_cooldown_diag',
+      status: 'running',
+    });
+
+    try {
+      await assert.rejects(
+        async () => {
+          await downloadFromMirrors(99908, job);
+        },
+        (err) => {
+          const e = /** @type {any} */ (err);
+          assert.equal(e.deferSet, true, 'Ошибка должна содержать deferSet: true');
+          assert.match(e.message, /Mirror Cooldown: остывает после 429/);
+          assert.match(e.message, /Mirror 404 Only/);
+          return true;
+        },
+      );
+    } finally {
+      mirrorCooldowns.clear();
+      await new Promise((r) => s404.close(r));
+    }
+  });
+
+  it('safeDownloadFetch отклоняет промис с ETIMEDOUT при срабатывании таймаута', async () => {
+    // Сервер, который принимает соединение, но не отправляет заголовки
+    const hangingServer = http.createServer(() => {
+      // намеренно не отвечаем
+    });
+    await new Promise((r) => hangingServer.listen(0, '127.0.0.1', () => r(null)));
+    const hangPort = /** @type {import('node:net').AddressInfo} */ (hangingServer.address()).port;
+
+    try {
+      await assert.rejects(
+        async () => {
+          await safeDownloadFetch(`http://127.0.0.1:${hangPort}/hang`, { timeout: 150 });
+        },
+        (err) => {
+          const e = /** @type {any} */ (err);
+          assert.equal(e.code, 'ETIMEDOUT');
+          return true;
+        },
+      );
+    } finally {
+      await new Promise((r) => hangingServer.close(r));
     }
   });
 });

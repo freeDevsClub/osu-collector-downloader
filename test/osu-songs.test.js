@@ -28,6 +28,7 @@ const {
   DEFAULT_MAX_ZIP_FILES,
   DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES,
   DEFAULT_MAX_ZIP_COMPRESSION_RATIO,
+  DEFAULT_MIN_ZIP_RATIO_CHECK_BYTES,
   moveFile,
   buildBeatmapFolderName,
   handlePostDownload,
@@ -1229,10 +1230,10 @@ describe('Интеграция с локальной директорией osu!
       assert.equal(fs.existsSync(outDir), false);
     });
 
-    test('extractZip отклоняет файл с подозрительно высокой степенью сжатия (compression ratio > 100:1)', async () => {
-      // Имитируем запись в заголовке: сжато 10 байт, распаковано 50000 байт (ratio 5000:1)
+    test('extractZip отклоняет файл с подозрительно высокой степенью сжатия (compression ratio > 100:1 для файлов > 1 МБ)', async () => {
+      // Имитируем запись в заголовке: сжато 10 байт, распаковано 2 000 000 байт (> 1 МБ, ratio 200000:1)
       const zipBuf = createMockZip({
-        'bomb.txt': { content: 'test', compSize: 10, uncompSize: 50000 },
+        'bomb.txt': { content: 'test', compSize: 10, uncompSize: 2 * 1024 * 1024 },
       });
       const zipPath = path.join(tempBaseDir, 'ratio_bomb.osz');
       await fs.promises.writeFile(zipPath, zipBuf);
@@ -1240,6 +1241,39 @@ describe('Интеграция с локальной директорией osu!
 
       await assert.rejects(
         () => extractZip(zipPath, outDir, { maxCompressionRatio: 100 }),
+        /Подозрительно высокая степень сжатия файла/,
+      );
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    test('extractZip не бракует небольшие тихие WAV-файлы с высокой степенью сжатия (<= 1 МБ, ratio > 100:1)', async () => {
+      // Имитируем реальный тихий сэмпл (120 000 байт нулей сжимаются до ~133 байт, ratio > 900:1 > 100:1)
+      const silentWav = Buffer.alloc(120000, 0);
+      const zipBuf = createMockZip({
+        'normal-sliderslide.wav': silentWav,
+        'beatmap.osu': 'osu file format v14\r\n[General]\r\n',
+      });
+      const zipPath = path.join(tempBaseDir, 'silent_sample.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_silent');
+
+      const count = await extractZip(zipPath, outDir, { maxCompressionRatio: 100 });
+      assert.equal(count, 2);
+      assert.equal(fs.existsSync(outDir), true);
+      assert.equal(fs.existsSync(path.join(outDir, 'normal-sliderslide.wav')), true);
+      assert.equal(fs.statSync(path.join(outDir, 'normal-sliderslide.wav')).size, 120000);
+    });
+
+    test('extractZip с minRatioCheckBytes: 0 проверяет степень сжатия даже для небольших файлов', async () => {
+      const zipBuf = createMockZip({
+        'small_bomb.txt': { content: 'test', compSize: 10, uncompSize: 50000 },
+      });
+      const zipPath = path.join(tempBaseDir, 'small_ratio_bomb.osz');
+      await fs.promises.writeFile(zipPath, zipBuf);
+      const outDir = path.join(tempBaseDir, 'out_small_ratio');
+
+      await assert.rejects(
+        () => extractZip(zipPath, outDir, { maxCompressionRatio: 100, minRatioCheckBytes: 0 }),
         /Подозрительно высокая степень сжатия файла/,
       );
       assert.equal(fs.existsSync(outDir), false);
