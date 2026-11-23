@@ -59,4 +59,44 @@ describe('SEC-001: Безопасность токена API при запуск
       }
     }
   });
+
+  it('SEC-005: startServer логирует предупреждение security.api_token_disabled при DISABLE_API_TOKEN=1', async () => {
+    const testEnv = await setupIsolatedTestEnv('sec-005-');
+    resetBootstrap();
+    const prevDisable = process.env.DISABLE_API_TOKEN;
+    process.env.DISABLE_API_TOKEN = '1';
+
+    const warnLogs = [];
+    const originalConsoleWarn = console.warn;
+    console.warn = (msg) => {
+      warnLogs.push(String(msg));
+    };
+
+    let appServer;
+    try {
+      appServer = await startServer(0, '127.0.0.1', { requireToken: false });
+      const warningLog = warnLogs.find((l) => l.includes('security.api_token_disabled'));
+      assert.ok(warningLog, 'Предупреждение security.api_token_disabled должно быть зафиксировано');
+
+      const parsed = JSON.parse(warningLog);
+      assert.equal(parsed.event, 'security.api_token_disabled');
+      assert.equal(parsed.level, 'warn');
+      assert.match(parsed.message, /API token check DISABLED/);
+    } finally {
+      if (prevDisable !== undefined) {
+        process.env.DISABLE_API_TOKEN = prevDisable;
+      } else {
+        delete process.env.DISABLE_API_TOKEN;
+      }
+      console.warn = originalConsoleWarn;
+      if (appServer) {
+        await new Promise((resolve) => appServer.close(resolve));
+      }
+      resetApiToken();
+      resetBootstrap();
+      if (testEnv) {
+        await testEnv.cleanup();
+      }
+    }
+  });
 });

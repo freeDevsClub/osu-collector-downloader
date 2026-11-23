@@ -251,6 +251,11 @@ async function startServer(port = PORT, host = HOST, options = {}) {
         dataDirectory: getDataDir(),
         downloadMirrors: MIRRORS.map((mirror) => mirror.id),
       });
+      if (process.env.DISABLE_API_TOKEN === '1') {
+        log('warn', 'security.api_token_disabled', {
+          message: 'API token check DISABLED (DISABLE_API_TOKEN=1). Use only in isolated environments!',
+        });
+      }
       log('info', 'server.hint', {
         hint: `Скачивание идёт через зеркала: ${MIRRORS.map((mirror) => mirror.label).join(', ')}.`,
       });

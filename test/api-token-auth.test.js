@@ -127,6 +127,18 @@ describe('Аутентификация локального API через се�
       assert.match(res.body?.error, /Отсутствует или недействителен токен авторизации API/);
     });
 
+    it('блокирует GET /api/downloads/events без токена с кодом 401 (SSE)', async () => {
+      const res = await request('GET', '/api/downloads/events');
+      assert.equal(res.status, 401);
+      assert.match(res.body?.error, /Отсутствует или недействителен токен авторизации API/);
+    });
+
+    it('блокирует GET /api/downloads/:id/events без токена с кодом 401 (SSE)', async () => {
+      const res = await request('GET', '/api/downloads/test-job-id/events');
+      assert.equal(res.status, 401);
+      assert.match(res.body?.error, /Отсутствует или недействителен токен авторизации API/);
+    });
+
     it('отклоняет запросы с неверным токеном в заголовке X-API-Token', async () => {
       const res = await request(
         'POST',
@@ -209,6 +221,13 @@ describe('Аутентификация локального API через се�
       const res = await request('DELETE', '/api/session', { 'x-api-token': token });
       assert.equal(res.status, 200);
       assert.equal(res.body?.connected, false);
+    });
+
+    it('успешно авторизует SSE-запрос к /api/downloads/:id/events с валидным токеном', async () => {
+      const token = getApiToken();
+      const res = await request('GET', '/api/downloads/nonexistent/events', { 'x-api-token': token });
+      assert.equal(res.status, 404);
+      assert.equal(res.body?.error, 'Загрузка не найдена.');
     });
   });
 

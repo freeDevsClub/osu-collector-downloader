@@ -32,6 +32,7 @@ const {
   buildBeatmapFolderName,
   handlePostDownload,
   selectFolderDialog,
+  buildPowerShellFolderDialogScript,
   resetSettingsForTest,
 } = require('../lib/osu.js');
 
@@ -1093,6 +1094,87 @@ describe('Интеграция с локальной директорией osu!
     // Поддерживает mockPath
     const res2 = await selectFolderDialog('', { mockPath: 'C:\\Games\\osu!' });
     assert.equal(res2, 'C:\\Games\\osu!');
+  });
+
+  test('SEC-004: buildPowerShellFolderDialogScript формирует статический скрипт и использует $env:DIALOG_INIT_PATH', () => {
+    const script = buildPowerShellFolderDialogScript();
+    assert.ok(script.includes('$env:DIALOG_INIT_PATH'));
+    assert.equal(script.includes('$init ='), false, 'Скрипт не должен содержать интерполяцию переменной $init');
+    assert.ok(script.includes('Test-Path -LiteralPath $env:DIALOG_INIT_PATH'));
+    assert.ok(script.includes('$f.SelectedPath = $env:DIALOG_INIT_PATH'));
+  });
+
+  test('SEC-004: selectFolderDialog на Windows передаёт initialPath исключительно через переменную окружения, защищая от Command Injection', async () => {
+    const maliciousPayloads = [
+      "'; whoami; $x='",
+      'C:\\osu"; Start-Process calc.exe; #',
+      '$(whoami)',
+      '`whoami`',
+      'path & dir & echo pwned',
+    ];
+
+    for (const payload of maliciousPayloads) {
+      /** @type {string | null} */
+      let executedFile = null;
+      /** @type {string[] | null} */
+      let executedArgs = null;
+      /** @type {Record<string, any> | null} */
+      let executedEnv = null;
+
+      const mockExecFile = (file, args, opts, callback) => {
+        executedFile = file;
+        executedArgs = args;
+        executedEnv = opts?.env;
+        callback(null, 'C:\\Selected\\osu', '');
+      };
+
+      const result = await selectFolderDialog(payload, {
+        force: true,
+        platform: 'win32',
+        execFile: mockExecFile,
+      });
+
+      assert.equal(result, 'C:\\Selected\\osu');
+      assert.equal(executedFile, 'powershell');
+      assert.ok(executedArgs);
+      assert.ok(executedEnv);
+
+      // Аргументы PowerShell не должны содержать пейлоад инъекции
+      const commandIndex = executedArgs.indexOf('-Command');
+      assert.notEqual(commandIndex, -1);
+      const commandArg = executedArgs[commandIndex + 1];
+      assert.equal(
+        commandArg.includes(payload),
+        false,
+        `Команда PowerShell не должна содержать внедренный пейлоад: ${payload}`,
+      );
+      assert.equal(commandArg.includes('whoami'), false);
+      assert.equal(commandArg.includes('calc.exe'), false);
+
+      // Пейлоад должен безопасно лежать в переменной окружения DIALOG_INIT_PATH
+      assert.ok('DIALOG_INIT_PATH' in executedEnv, 'Переменная DIALOG_INIT_PATH должна быть установлена в env');
+    }
+  });
+
+  test('SEC-004: selectFolderDialog очищает управляющие символы и переносы строк из initialPath перед передачей в env', async () => {
+    /** @type {Record<string, any> | null} */
+    let capturedEnv = null;
+    const mockExecFile = (file, args, opts, callback) => {
+      capturedEnv = opts?.env;
+      callback(null, 'C:\\osu', '');
+    };
+
+    await selectFolderDialog('C:\\osu\r\n\0\\folder', {
+      force: true,
+      platform: 'win32',
+      execFile: mockExecFile,
+    });
+
+    assert.ok(capturedEnv);
+    const dialogPath = String(capturedEnv.DIALOG_INIT_PATH || '');
+    assert.equal(dialogPath.includes('\r'), false);
+    assert.equal(dialogPath.includes('\n'), false);
+    assert.equal(dialogPath.includes('\0'), false);
   });
 
   describe('Безопасность extractZip: лимиты распаковки и валидация .osz архивов (P0)', () => {
