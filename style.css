@@ -1014,15 +1014,52 @@ a.map-title:hover {
   border-radius: 6px;
   border-left: 3px solid var(--red);
 }
+.failed-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
 .failed-item-title {
   font-weight: 600;
   color: var(--text);
+  text-decoration: none;
+}
+a.failed-item-title:hover {
+  text-decoration: underline;
+  color: var(--accent);
+}
+.failed-item-link {
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.failed-item-link:hover {
+  text-decoration: underline;
 }
 .failed-item-reason {
   color: var(--muted);
   font-size: 12px;
   word-break: break-word;
   margin-top: 2px;
+}
+.failed-item-hint {
+  font-size: 11px;
+  color: var(--amber);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.failed-summary-tip {
+  padding: 8px 10px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  color: #fcd34d;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 6px;
 }
 .stats {
   display: grid;

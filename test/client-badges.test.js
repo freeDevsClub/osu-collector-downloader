@@ -204,4 +204,91 @@ describe('Оптимизация updateJob и DOM-реконсиляция ош�
       /** @type {any} */ (global).document = originalDocument;
     }
   });
+
+  it('updateJob создаёт ссылки на osu.ppy.sh и подсказку о сессии osu! для упавших карт', () => {
+    const createdElements = [];
+    /** @type {any} */
+    const mockFailedList = {
+      children: [],
+      replaceChildren: () => {
+        mockFailedList.children = [];
+      },
+      append: (item) => {
+        mockFailedList.children.push(item);
+      },
+    };
+    const mockFailedDetails = { hidden: true };
+    const mockFailedCount = { textContent: '' };
+
+    const elements = {
+      'failed-details': mockFailedDetails,
+      'failed-list': mockFailedList,
+      'failed-summary-count': mockFailedCount,
+      'transfer-bytes': { textContent: '' },
+      'transfer-label': { textContent: '' },
+      'downloaded-count': { textContent: '' },
+      'skipped-count': { textContent: '' },
+      'failed-count': { textContent: '' },
+    };
+
+    const originalDocument = /** @type {any} */ (global).document;
+    /** @type {any} */ (global).document = {
+      getElementById: (id) => elements[id] || null,
+      createElement: (tag) => {
+        const el = {
+          tagName: tag,
+          className: '',
+          textContent: '',
+          href: '',
+          target: '',
+          rel: '',
+          children: [],
+          append: (...args) => {
+            el.children.push(...args);
+          },
+        };
+        createdElements.push(el);
+        return el;
+      },
+    };
+
+    try {
+      const job = {
+        id: 'job_links_test',
+        total: 5,
+        completed: 1,
+        downloaded: 0,
+        skipped: 0,
+        failed: 1,
+        errors: [
+          {
+            id: 1832053,
+            name: 'Kafu — Bita Ichimonme',
+            error: 'набора нет ни на одном зеркале (404): osu!dl: 404',
+          },
+        ],
+      };
+
+      updateJob(job);
+
+      // Проверяем подсказку вверху списка
+      const tip = mockFailedList.children.find((c) => c.className === 'failed-summary-tip');
+      assert.ok(tip, 'Должна присутствовать подсказка failed-summary-tip');
+      assert.match(tip.textContent, /Сессия osu!/);
+
+      // Проверяем ссылку на osu.ppy.sh
+      const links = createdElements.filter((el) => el.tagName === 'a');
+      const osuLink = links.find((l) => l.href === 'https://osu.ppy.sh/beatmapsets/1832053');
+      assert.ok(osuLink, 'Должна быть ссылка на https://osu.ppy.sh/beatmapsets/1832053');
+      assert.equal(osuLink.target, '_blank');
+      assert.equal(osuLink.rel, 'noopener noreferrer');
+
+      // Проверяем подсказку внутри карточки ошибки
+      const hint = createdElements.find((el) => el.className === 'failed-item-hint');
+      assert.ok(hint, 'Должна присутствовать подсказка failed-item-hint');
+      assert.match(hint.textContent, /официального сайта или через Cookie сессии/);
+    } finally {
+      /** @type {any} */ (global).document = originalDocument;
+    }
+  });
 });

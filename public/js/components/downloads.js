@@ -479,16 +479,92 @@ export function updateJob(job) {
           lastRenderedErrorsSignature = errorsSig;
           lastRenderedErrorsCount = errorCount;
           failedList.replaceChildren();
+
+          const hasMissingOnMirrors = job.errors.some(
+            (e) =>
+              typeof e.error === 'string' &&
+              (/набора нет ни на одном зеркале|404|не отдало файл/i.test(e.error) ||
+                /зеркал/i.test(e.error)),
+          );
+          if (hasMissingOnMirrors) {
+            const tip = document.createElement('div');
+            tip.className = 'failed-summary-tip';
+            tip.textContent =
+              '💡 Часть карт недоступна на публичных зеркалах. Вы можете открыть их на osu.ppy.sh или переключить метод загрузки на «Сессия osu!» в боковой панели (указав Cookie в настройках).';
+            failedList.append(tip);
+          }
+
           for (const err of job.errors) {
             const item = document.createElement('div');
             item.className = 'failed-item';
-            const title = document.createElement('div');
-            title.className = 'failed-item-title';
-            title.textContent = err.name || `Набор ${err.id}`;
+
+            const numId = Number(err.id);
+            const isValidSetId = Number.isSafeInteger(numId) && numId > 0;
+
+            const header = document.createElement('div');
+            header.className = 'failed-item-header';
+
+            if (isValidSetId) {
+              const titleLink = document.createElement('a');
+              titleLink.className = 'failed-item-title';
+              titleLink.textContent = err.name || `Набор ${err.id}`;
+              titleLink.href = `https://osu.ppy.sh/beatmapsets/${numId}`;
+              titleLink.target = '_blank';
+              titleLink.rel = 'noopener noreferrer';
+              titleLink.title = 'Открыть набор на официальном сайте osu.ppy.sh';
+
+              const openLink = document.createElement('a');
+              openLink.className = 'failed-item-link';
+              openLink.textContent = 'osu.ppy.sh ↗';
+              openLink.href = `https://osu.ppy.sh/beatmapsets/${numId}`;
+              openLink.target = '_blank';
+              openLink.rel = 'noopener noreferrer';
+              openLink.title = 'Открыть страницу карты на osu.ppy.sh для ручного скачивания';
+
+              if (typeof header.append === 'function') {
+                header.append(titleLink, openLink);
+              } else if (typeof header.appendChild === 'function') {
+                header.appendChild(titleLink);
+                header.appendChild(openLink);
+              }
+            } else {
+              const title = document.createElement('div');
+              title.className = 'failed-item-title';
+              title.textContent = err.name || `Набор ${err.id}`;
+              if (typeof header.append === 'function') {
+                header.append(title);
+              } else if (typeof header.appendChild === 'function') {
+                header.appendChild(title);
+              }
+            }
+
             const reason = document.createElement('div');
             reason.className = 'failed-item-reason';
             reason.textContent = err.error || 'Ошибка загрузки';
-            item.append(title, reason);
+
+            if (typeof item.append === 'function') {
+              item.append(header, reason);
+            } else if (typeof item.appendChild === 'function') {
+              item.appendChild(header);
+              item.appendChild(reason);
+            }
+
+            if (
+              isValidSetId &&
+              typeof err.error === 'string' &&
+              (/набора нет ни на одном зеркале|404|не отдало файл/i.test(err.error) ||
+                /зеркал/i.test(err.error))
+            ) {
+              const hint = document.createElement('div');
+              hint.className = 'failed-item-hint';
+              hint.textContent = 'Можно скачать вручную с официального сайта или через Cookie сессии osu!.';
+              if (typeof item.append === 'function') {
+                item.append(hint);
+              } else if (typeof item.appendChild === 'function') {
+                item.appendChild(hint);
+              }
+            }
+
             failedList.append(item);
           }
         }

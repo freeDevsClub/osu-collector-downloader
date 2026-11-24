@@ -195,11 +195,22 @@ export function matchesStatusFilter(mapId, statusFilter) {
   if (!statusFilter || statusFilter === 'all') return true;
   if (!mapId) return true;
   const numId = Number(mapId);
+  if (collection) {
+    if (!collection.installedSet && Array.isArray(collection.installedSetIds)) {
+      collection.installedSet = new Set(collection.installedSetIds.map(Number));
+    }
+    if (!collection.downloadedSet && Array.isArray(collection.downloadedSetIds)) {
+      collection.downloadedSet = new Set(collection.downloadedSetIds.map(Number));
+    }
+  }
   const isInstalled = collection?.installedSet
     ? collection.installedSet.has(numId)
     : collection?.installedSetIds?.includes(numId);
+  const isDownloaded = collection?.downloadedSet
+    ? collection.downloadedSet.has(numId)
+    : collection?.downloadedSetIds?.includes(numId);
   if (statusFilter === 'installed') return Boolean(isInstalled);
-  if (statusFilter === 'new') return !isInstalled;
+  if (statusFilter === 'new') return !isInstalled && !isDownloaded;
   return true;
 }
 
@@ -252,13 +263,50 @@ export function setStatusFilter(filter) {
  */
 export function updateTabCounts() {
   const allCount = collection?.count || collection?.setIds?.length || 0;
+  if (collection) {
+    if (!collection.installedSet && Array.isArray(collection.installedSetIds)) {
+      collection.installedSet = new Set(collection.installedSetIds.map(Number));
+    }
+    if (!collection.downloadedSet && Array.isArray(collection.downloadedSetIds)) {
+      collection.downloadedSet = new Set(collection.downloadedSetIds.map(Number));
+    }
+  }
   let installedCount = 0;
   if (collection?.installedSet) {
     installedCount = collection.installedSet.size;
   } else if (Array.isArray(collection?.installedSetIds)) {
     installedCount = collection.installedSetIds.length;
   }
-  const newCount = Math.max(0, allCount - installedCount);
+  let downloadedCount = 0;
+  if (collection?.downloadedSet) {
+    downloadedCount = collection.downloadedSet.size;
+  } else if (Array.isArray(collection?.downloadedSetIds)) {
+    downloadedCount = collection.downloadedSetIds.length;
+  }
+
+  let newCount = 0;
+  const allIds = Array.isArray(collection?.setIds)
+    ? collection.setIds
+    : Array.isArray(collection?.maps)
+      ? collection.maps.map((m) => m?.id)
+      : null;
+
+  if (allIds && allIds.length === allCount) {
+    for (const rawId of allIds) {
+      const numId = Number(rawId);
+      const isInstalled = collection?.installedSet
+        ? collection.installedSet.has(numId)
+        : collection?.installedSetIds?.includes(numId);
+      const isDownloaded = collection?.downloadedSet
+        ? collection.downloadedSet.has(numId)
+        : collection?.downloadedSetIds?.includes(numId);
+      if (!isInstalled && !isDownloaded) {
+        newCount++;
+      }
+    }
+  } else {
+    newCount = Math.max(0, allCount - installedCount - downloadedCount);
+  }
 
   const countAll = byId('tab-count-all');
   const countNew = byId('tab-count-new');

@@ -336,13 +336,15 @@ describe('Выбор подмножества карт, поиск и фильт
       const mockData = {
         id: 2222,
         name: 'Status Filter Collection',
-        count: 3,
-        setIds: [5001, 5002, 5003],
+        count: 4,
+        setIds: [5001, 5002, 5003, 5004],
         installedSetIds: [5002],
+        downloadedSetIds: [5004],
         maps: [
           { id: 5001, title: 'Map New 1', artist: 'A1', creator: 'M1', label: 'A1 — Map New 1', bpm: 180, stars: 5.5 },
           { id: 5002, title: 'Map Installed', artist: 'A2', creator: 'M2', label: 'A2 — Map Installed', bpm: 190, stars: 6.2 },
           { id: 5003, title: 'Map New 2', artist: 'A3', creator: 'M3', label: 'A3 — Map New 2', bpm: 200, stars: 7.1 },
+          { id: 5004, title: 'Map Downloaded', artist: 'A4', creator: 'M4', label: 'A4 — Map Downloaded', bpm: 210, stars: 5.0 },
         ],
       };
 
@@ -357,23 +359,30 @@ describe('Выбор подмножества карт, поиск и фильт
       assert.equal(collectionModule.matchesStatusFilter(5002, 'new'), false);
       assert.equal(collectionModule.matchesStatusFilter(5002, 'installed'), true);
 
-      // Фильтр 'new' скрывает установленные (5002)
+      assert.equal(collectionModule.matchesStatusFilter(5004, 'all'), true);
+      assert.equal(collectionModule.matchesStatusFilter(5004, 'new'), false);
+      assert.equal(collectionModule.matchesStatusFilter(5004, 'installed'), false);
+
+      // Фильтр 'new' скрывает установленные (5002) и скачанные (5004)
       collectionModule.setStatusFilter('new');
       assert.equal(collectionModule.mapListByIndex[0].item.hidden, false);
       assert.equal(collectionModule.mapListByIndex[1].item.hidden, true);
       assert.equal(collectionModule.mapListByIndex[2].item.hidden, false);
+      assert.equal(collectionModule.mapListByIndex[3].item.hidden, true);
 
       // Фильтр 'installed' оставляет только 5002
       collectionModule.setStatusFilter('installed');
       assert.equal(collectionModule.mapListByIndex[0].item.hidden, true);
       assert.equal(collectionModule.mapListByIndex[1].item.hidden, false);
       assert.equal(collectionModule.mapListByIndex[2].item.hidden, true);
+      assert.equal(collectionModule.mapListByIndex[3].item.hidden, true);
 
       // Сброс на 'all'
       collectionModule.setStatusFilter('all');
       assert.equal(collectionModule.mapListByIndex[0].item.hidden, false);
       assert.equal(collectionModule.mapListByIndex[1].item.hidden, false);
       assert.equal(collectionModule.mapListByIndex[2].item.hidden, false);
+      assert.equal(collectionModule.mapListByIndex[3].item.hidden, false);
     });
 
     it('updateTabCounts вычисляет количество карт для вкладок Все, Новые, В игре', () => {
@@ -383,12 +392,13 @@ describe('Выбор подмножества карт, поиск и фильт
         count: 5,
         setIds: [1, 2, 3, 4, 5],
         installedSetIds: [2, 4],
+        downloadedSetIds: [3],
       };
       collectionModule.setCollection(mockData);
       collectionModule.updateTabCounts();
 
       assert.equal(global.document.getElementById('tab-count-all').textContent, '5');
-      assert.equal(global.document.getElementById('tab-count-new').textContent, '3');
+      assert.equal(global.document.getElementById('tab-count-new').textContent, '2');
       assert.equal(global.document.getElementById('tab-count-installed').textContent, '2');
     });
 

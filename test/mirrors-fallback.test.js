@@ -131,9 +131,17 @@ describe('Интеграционные тесты fallback между зерка
     });
 
     try {
-      await assert.rejects(async () => {
-        await downloadFromMirrors(99902, job);
-      }, /набора нет ни на одном зеркале \(404\)/);
+      await assert.rejects(
+        async () => {
+          await downloadFromMirrors(99902, job);
+        },
+        (err) => {
+          const e = /** @type {any} */ (err);
+          assert.match(e.message, /набора нет ни на одном зеркале \(404\)/);
+          assert.match(e.message, /osu\.ppy\.sh/);
+          return true;
+        },
+      );
     } finally {
       await new Promise((r) => s404.close(r));
     }
@@ -412,5 +420,12 @@ describe('Интеграционные тесты fallback между зерка
     } finally {
       await new Promise((r) => hangingServer.close(r));
     }
+  });
+
+  it('config.js экспортирует DEFERRED_RETRY_DELAY_MS и getDeferredRetryDelayMs', () => {
+    const config = require('../lib/config.js');
+    assert.equal(typeof config.getDeferredRetryDelayMs, 'function');
+    assert.ok(config.getDeferredRetryDelayMs() >= 0);
+    assert.ok(config.DEFERRED_RETRY_DELAY_MS >= 0);
   });
 });
