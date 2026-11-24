@@ -79,9 +79,14 @@ describe('Режим скачивания «Без видео» (No Video)', () 
   it('DEFAULT_MIRRORS поддерживают noVideo', () => {
     for (const mirror of DEFAULT_MIRRORS) {
       const normalUrl = mirror.build(12345);
-      assert.equal(normalUrl.includes('noVideo=1'), false);
       const noVideoUrl = mirror.build(12345, { noVideo: true });
-      assert.equal(noVideoUrl.includes('noVideo=1'), true);
+      if (mirror.id === 'sayobot') {
+        assert.equal(normalUrl.includes('/full/'), true);
+        assert.equal(noVideoUrl.includes('/novideo/'), true);
+      } else {
+        assert.equal(normalUrl.includes('noVideo=1'), false);
+        assert.equal(noVideoUrl.includes('noVideo=1'), true);
+      }
     }
   });
 
