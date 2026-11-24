@@ -139,6 +139,7 @@ describe('Интеграционные тесты fallback между зерка
           const e = /** @type {any} */ (err);
           assert.match(e.message, /набора нет ни на одном зеркале \(404\)/);
           assert.match(e.message, /osu\.ppy\.sh/);
+          assert.equal(e.isMissingOnAllMirrors, true);
           return true;
         },
       );

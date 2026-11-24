@@ -265,6 +265,7 @@ describe('Оптимизация updateJob и DOM-реконсиляция ош�
             id: 1832053,
             name: 'Kafu — Bita Ichimonme',
             error: 'набора нет ни на одном зеркале (404): osu!dl: 404',
+            isMissingOnAllMirrors: true,
           },
         ],
       };
@@ -275,6 +276,7 @@ describe('Оптимизация updateJob и DOM-реконсиляция ош�
       const tip = mockFailedList.children.find((c) => c.className === 'failed-summary-tip');
       assert.ok(tip, 'Должна присутствовать подсказка failed-summary-tip');
       assert.match(tip.textContent, /Сессия osu!/);
+      assert.match(tip.textContent, /1 карта недоступна на публичных зеркалах/);
 
       // Проверяем ссылку на osu.ppy.sh
       const links = createdElements.filter((el) => el.tagName === 'a');
@@ -283,7 +285,12 @@ describe('Оптимизация updateJob и DOM-реконсиляция ош�
       assert.equal(osuLink.target, '_blank');
       assert.equal(osuLink.rel, 'noopener noreferrer');
 
-      // Проверяем подсказку внутри карточки ошибки
+      // Проверяем карточку ошибки и подсказку внутри
+      const failedItem = createdElements.find(
+        (el) => el.className && el.className.includes('failed-item--missing'),
+      );
+      assert.ok(failedItem, 'Должен присутствовать элемент с классом failed-item--missing');
+
       const hint = createdElements.find((el) => el.className === 'failed-item-hint');
       assert.ok(hint, 'Должна присутствовать подсказка failed-item-hint');
       assert.match(hint.textContent, /официального сайта или через Cookie сессии/);

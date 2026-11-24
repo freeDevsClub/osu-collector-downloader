@@ -21,6 +21,23 @@ describe('Защита от DNS Rebinding и SSRF в mirrorRedirectAllowed и з
     assert.equal(isAllowed, false);
   });
 
+  test('mirrorRedirectAllowed разрешает нестандартные порты при явном указании в allowedPorts', async () => {
+    // Без allowedPorts порт 25225 отклоняется
+    assert.equal(await mirrorRedirectAllowed(new URL('https://example.com:25225/beatmap.osz')), false);
+
+    // С allowedPorts порт 25225 успешно разрешается
+    assert.equal(
+      await mirrorRedirectAllowed(new URL('https://example.com:25225/beatmap.osz'), undefined, ['443', '25225']),
+      true,
+    );
+
+    // Не указанный в allowedPorts порт (8443) по-прежнему отклоняется
+    assert.equal(
+      await mirrorRedirectAllowed(new URL('https://example.com:8443/beatmap.osz'), undefined, ['443', '25225']),
+      false,
+    );
+  });
+
   test('mirrorRedirectAllowed отклоняет прямые IP-адреса хостов (обязан быть CDN-домен)', async () => {
     assert.equal(await mirrorRedirectAllowed(new URL('https://1.1.1.1/beatmap.osz')), false);
     assert.equal(await mirrorRedirectAllowed(new URL('https://127.0.0.1/beatmap.osz')), false);

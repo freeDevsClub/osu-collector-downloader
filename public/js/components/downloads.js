@@ -480,23 +480,35 @@ export function updateJob(job) {
           lastRenderedErrorsCount = errorCount;
           failedList.replaceChildren();
 
-          const hasMissingOnMirrors = job.errors.some(
+          const missingCount = job.errors.filter(
             (e) =>
-              typeof e.error === 'string' &&
-              (/набора нет ни на одном зеркале|404|не отдало файл/i.test(e.error) ||
-                /зеркал/i.test(e.error)),
-          );
+              Boolean(e.isMissingOnAllMirrors) ||
+              (typeof e.error === 'string' &&
+                (/набора нет ни на одном зеркале|404/i.test(e.error) && !/5\d\d/i.test(e.error))),
+          ).length;
+          const hasMissingOnMirrors = missingCount > 0;
           if (hasMissingOnMirrors) {
             const tip = document.createElement('div');
             tip.className = 'failed-summary-tip';
-            tip.textContent =
-              '💡 Часть карт недоступна на публичных зеркалах. Вы можете открыть их на osu.ppy.sh или переключить метод загрузки на «Сессия osu!» в боковой панели (указав Cookie в настройках).';
+            const countPhrase =
+              missingCount === 1
+                ? '1 карта недоступна'
+                : missingCount < 5
+                  ? `${missingCount} карты недоступны`
+                  : `${missingCount} карт недоступно`;
+            tip.textContent = `💡 ${countPhrase} на публичных зеркалах (404). Вы можете открыть их на osu.ppy.sh или переключить метод загрузки на «Сессия osu!» в боковой панели (указав Cookie в настройках).`;
             failedList.append(tip);
           }
 
           for (const err of job.errors) {
+            const isMissingOnMirrors = Boolean(
+              err.isMissingOnAllMirrors ||
+                (typeof err.error === 'string' &&
+                  (/набора нет ни на одном зеркале|404/i.test(err.error) && !/5\d\d/i.test(err.error))),
+            );
+
             const item = document.createElement('div');
-            item.className = 'failed-item';
+            item.className = isMissingOnMirrors ? 'failed-item failed-item--missing' : 'failed-item';
 
             const numId = Number(err.id);
             const isValidSetId = Number.isSafeInteger(numId) && numId > 0;
@@ -549,15 +561,25 @@ export function updateJob(job) {
               item.appendChild(reason);
             }
 
-            if (
+            if (isValidSetId && isMissingOnMirrors) {
+              const hint = document.createElement('div');
+              hint.className = 'failed-item-hint';
+              hint.textContent =
+                '⚠️ Карта отсутствует на всех публичных зеркалах. Можно скачать вручную с официального сайта или через Cookie сессии osu!.';
+              if (typeof item.append === 'function') {
+                item.append(hint);
+              } else if (typeof item.appendChild === 'function') {
+                item.appendChild(hint);
+              }
+            } else if (
               isValidSetId &&
               typeof err.error === 'string' &&
-              (/набора нет ни на одном зеркале|404|не отдало файл/i.test(err.error) ||
-                /зеркал/i.test(err.error))
+              (/зеркал/i.test(err.error) || /5\d\d/i.test(err.error) || /таймаут/i.test(err.error))
             ) {
               const hint = document.createElement('div');
               hint.className = 'failed-item-hint';
-              hint.textContent = 'Можно скачать вручную с официального сайта или через Cookie сессии osu!.';
+              hint.textContent =
+                'Зеркала вернули временную ошибку. Можно скачать вручную с официального сайта или через Cookie сессии osu!.';
               if (typeof item.append === 'function') {
                 item.append(hint);
               } else if (typeof item.appendChild === 'function') {

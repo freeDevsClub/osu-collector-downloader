@@ -10,6 +10,7 @@
   --pink2: #f34e91;
   --green: #80ddb0;
   --red: #ff929a;
+  --amber: #fcd34d;
 }
 * {
   box-sizing: border-box;
@@ -1013,6 +1014,10 @@ a.map-title:hover {
   background: rgba(0, 0, 0, 0.25);
   border-radius: 6px;
   border-left: 3px solid var(--red);
+}
+.failed-item.failed-item--missing {
+  border-left-color: var(--amber);
+  background: rgba(245, 158, 11, 0.08);
 }
 .failed-item-header {
   display: flex;
